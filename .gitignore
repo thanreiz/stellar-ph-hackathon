@@ -5,3 +5,5 @@ dist-web/
 .playwright-cli/
 output/
 .DS_Store
+.env
+
