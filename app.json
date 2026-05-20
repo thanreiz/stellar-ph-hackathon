@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "SariSync Ledger",
+    "slug": "sarisync-ledger",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "sarisync",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.hackathon.sarisyncledger"
+    },
+    "android": {
+      "package": "com.hackathon.sarisyncledger"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow SariSync Ledger to scan supplier invoice QR codes."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    }
+  }
+}
