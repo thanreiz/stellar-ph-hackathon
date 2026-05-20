@@ -500,14 +500,14 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
           {LENDER_OFFERS.map(offer => (
             <View key={offer.id} style={styles.lenderCard}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.rowLabel}>{offer.name}</Text>
+                <Text style={styles.lenderName}>{offer.name}</Text>
                 <Text style={styles.bodyText}>{offer.description}</Text>
                 <Text style={[styles.bodyText, { color: "#6E766F", fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
               </View>
               <Pressable
                 disabled={isRequesting || !controlState.canTransact}
                 onPress={() => setSelectedOffer(offer)}
-                style={[styles.loanButton, (isRequesting || !controlState.canTransact) && styles.disabled]}
+                style={[styles.loanButton, (isRequesting || !controlState.canTransact) ? styles.disabled : null]}
               >
                 <Text style={styles.loanButtonText}>Humingi</Text>
               </Pressable>
@@ -606,7 +606,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
         activeLoans.map(loan => (
           <View key={loan.id} style={styles.debtRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.rowLabel}>{loan.lenderName}</Text>
+              <Text style={styles.lenderName}>{loan.lenderName}</Text>
               <Text style={styles.bodyText}>{new Date(loan.timestamp).toLocaleDateString("en-PH")}</Text>
             </View>
             <View style={styles.alignRight}>
@@ -614,7 +614,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
               <Pressable
                 disabled={isRepaying || !controlState.canTransact}
                 onPress={() => setConfirmLoan(loan)}
-                style={[styles.bayadButton, (isRepaying || !controlState.canTransact) && styles.disabled]}
+            style={[styles.bayadButton, (isRepaying || !controlState.canTransact) ? styles.disabled : null]}
               >
                 <Text style={styles.bayadButtonText}>Bayad</Text>
               </Pressable>
@@ -630,7 +630,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
           {paidLoans.map(loan => (
             <View key={loan.id} style={styles.debtRow}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.rowLabel, { color: "#6E766F" }]}>{loan.lenderName}</Text>
+                <Text style={[styles.lenderName, { color: "#6E766F" }]}>{loan.lenderName}</Text>
               </View>
               <View style={styles.alignRight}>
                 <Text style={[styles.debtAmount, { color: "#34C759" }]}>{formatPhp(loan.amountPhpDisplay)}</Text>
@@ -656,7 +656,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
       <Pressable
         disabled={isValidating || !validateHash.trim()}
         onPress={handleValidate}
-        style={[styles.primaryButton, (isValidating || !validateHash.trim()) && styles.disabled]}
+        style={[styles.primaryButton, (isValidating || !validateHash.trim()) ? styles.disabled : null]}
       >
         <Text style={styles.primaryButtonText}>{isValidating ? "Nag-va-validate..." : "I-Validate"}</Text>
       </Pressable>
@@ -1147,6 +1147,10 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: "#FAFAF7",
     marginTop: 8,
+  },
+  lenderName: {
+    color: "#17231D",
+    fontWeight: "800",
   },
   loanButton: {
     backgroundColor: "#007AFF",
