@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import {
@@ -39,6 +40,7 @@ export default function ScannerScreen() {
   const [isSettling, setIsSettling] = useState(false); // 4-B: rage-click guard (already existed)
   const [settlementResult, setSettlementResult] = useState(null);
   const [showQrError, setShowQrError] = useState(false); // 4-C: QR error modal state
+  const [mockQrPayload, setMockQrPayload] = useState("");
 
   const stage = useMemo(() => evaluateCreditStage(totalSyncedBenta), [totalSyncedBenta]);
   const stageMeta = getStageMetadata(stage);
@@ -174,6 +176,39 @@ export default function ScannerScreen() {
       >
         <Text style={styles.secondaryButtonText}>Scan Again</Text>
       </Pressable>
+
+      {/* Manual JSON Input for Web Fallback */}
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Manual JSON Input (Web Fallback)</Text>
+        <Text style={[styles.bodyText, { marginBottom: 8 }]}>
+          If testing on localhost without a camera, paste the QR JSON payload below:
+        </Text>
+        <TextInput
+          value={mockQrPayload}
+          onChangeText={setMockQrPayload}
+          placeholder='{"supplier_pubkey":"G...", "amount_usdc": 5}'
+          placeholderTextColor="#918A7F"
+          multiline
+          numberOfLines={2}
+          style={[styles.input, { height: 60, marginVertical: 8, textAlignVertical: "top", paddingTop: 8 }]}
+        />
+        <Pressable
+          style={styles.primaryButton}
+          onPress={() => {
+            if (!mockQrPayload.trim()) return;
+            try {
+              const parsedInvoice = parseSupplierInvoiceQr(mockQrPayload.trim());
+              setInvoice(parsedInvoice);
+              setScanError("");
+              setScanned(true);
+            } catch (error) {
+              setScanError(error.message);
+            }
+          }}
+        >
+          <Text style={styles.primaryButtonText}>Simulate QR Scan</Text>
+        </Pressable>
+      </View>
 
       {scanError && !showQrError ? (
         <View style={styles.errorCard}>
@@ -433,6 +468,16 @@ const styles = StyleSheet.create({
   },
   disabled: {
     opacity: 0.55,
+  },
+  input: {
+    borderColor: "#D4CEC1",
+    borderWidth: 1,
+    borderRadius: 8,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    fontSize: 18,
+    color: "#17231D",
+    backgroundColor: "#FFFEFB",
   },
   // 4-C: Mali ang QR Code modal styles
   modalOverlay: {
