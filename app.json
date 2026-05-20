@@ -3,6 +3,10 @@
     "name": "SariSync Ledger",
     "slug": "sarisync-ledger",
     "version": "0.1.0",
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "orientation": "portrait",
     "scheme": "sarisync",
     "userInterfaceStyle": "light",

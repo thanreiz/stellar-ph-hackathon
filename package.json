@@ -6,6 +6,12 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
+    "demo:android": "expo start --android",
+    "demo:ios": "expo start --ios",
+    "prebuild:android": "expo prebuild --platform android",
+    "run:android": "expo run:android",
+    "run:ios": "expo run:ios",
+    "seed:lenders": "node scripts/seedLenderLiquidity.mjs",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "test": "node --test tests/*.test.js",

@@ -99,6 +99,7 @@ export default function ScannerScreen() {
           type: 'FINANCING',
           amountUsdc: invoice.amount_usdc,
           supplierPubkey: invoice.supplier_pubkey,
+          txHash: result.transactionHash,
           timestamp: Date.now(),
         });
       }
@@ -177,11 +178,11 @@ export default function ScannerScreen() {
         <Text style={styles.secondaryButtonText}>Scan Again</Text>
       </Pressable>
 
-      {/* Manual JSON Input for Web Fallback */}
+      {/* Manual JSON input for phone-demo fallback */}
       <View style={styles.card}>
-        <Text style={styles.cardLabel}>Manual JSON Input (Web Fallback)</Text>
+        <Text style={styles.cardLabel}>Manual JSON Input (Demo Fallback)</Text>
         <Text style={[styles.bodyText, { marginBottom: 8 }]}>
-          If testing on localhost without a camera, paste the QR JSON payload below:
+          If QR scanning is unavailable during the phone demo, paste the QR JSON payload below:
         </Text>
         <TextInput
           value={mockQrPayload}

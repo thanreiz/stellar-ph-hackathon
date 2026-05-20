@@ -2,12 +2,12 @@
 
 SariSync Ledger is a 72-hour hackathon MVP for sari-sari store B2B inventory financing on Stellar Testnet.
 
-The app is strictly for store inventory financing, supplier invoice settlement, business debt visibility, and business capital upgrades. It is built as a React Native Expo mobile app with Expo Router and a web preview for local debugging.
+The app is strictly for store inventory financing, supplier invoice settlement, business debt visibility, and business capital upgrades. It is built as a mobile-first React Native Expo app with Expo Router for Android and iPhone demos.
 
 ## Current Status
 
 - App type: React Native Expo mobile app
-- Local preview: Expo web at `http://localhost:8081`
+- Demo targets: Android Studio emulator and physical iPhone through Expo
 - Network: Stellar Testnet only
 - Wallet model: app-owned Stellar secret key loaded from Expo public env variables for hackathon demo signing
 - Browser wallet extensions: not used
@@ -352,22 +352,40 @@ npm install
 
 ## Run
 
-Mobile/Expo:
+Start the Expo dev server:
 
 ```bash
 npm start
 ```
 
-Web preview:
+Run on an Android Studio emulator:
 
 ```bash
-npx expo start --web --localhost --port 8081
+npm run demo:android
 ```
 
-Open:
+Run on a connected iPhone or Expo Go device:
 
-```text
-http://localhost:8081
+```bash
+npm run demo:ios
+```
+
+For an Android Studio native project, generate the Android folder first:
+
+```bash
+npm run prebuild:android
+```
+
+Then open the generated `android/` folder in Android Studio, or run:
+
+```bash
+npm run run:android
+```
+
+If the live demo lenders run out of Testnet PHPC, reseed them from the configured store wallet:
+
+```bash
+npm run seed:lenders
 ```
 
 ## Verification Commands
@@ -384,33 +402,27 @@ Expo project health:
 npm run doctor
 ```
 
-Android bundle export:
+Android native smoke build:
 
 ```bash
-npx expo export --platform android --output-dir dist
-```
-
-Web bundle export:
-
-```bash
-npx expo export --platform web --output-dir dist-web
+npm run prebuild:android
 ```
 
 Forbidden dependency/product scan:
 
 ```bash
-rg -n "<blocked terms and blocked wallet package>" -S . -g '!node_modules' -g '!package-lock.json' -g '!dist' -g '!dist-web'
+rg -n "<blocked terms and blocked wallet package>" -S . -g '!node_modules' -g '!package-lock.json'
 ```
 
 ## Latest Verified Results
 
 Last run during development:
 
-- `npm test`: 21 tests passing
-- `npx expo-doctor`: 17/17 checks passing
-- `npx expo export --platform web --output-dir dist-web`: successful
-- Browser preview: renders at `http://localhost:8081`
-- Browser console: 0 runtime errors during preview check
+- `npm test`: 28 tests passing
+- `npm run doctor`: Expo project health check
+- `npm run demo:android`: primary Android Studio emulator command
+- `npm run demo:ios`: primary iPhone demo command
+- `npm run seed:lenders`: restores demo lender PHPC liquidity on Testnet
 
 Known audit note:
 
@@ -642,7 +654,7 @@ Covers:
 
 ### Initial Replacement
 
-- Replaced the previous web-only codebase with a React Native Expo app.
+- Replaced the previous prototype with a React Native Expo mobile app.
 - Added Expo Router.
 - Added Expo SDK 52-compatible React Native setup.
 - Added `.env.example`.
@@ -696,12 +708,11 @@ Covers:
 - Added wallet SDK tests.
 - Kept path payment settlement on the underlying Stellar SDK because that operation is advanced network behavior.
 
-### Web Debugging
+### Mobile Demo Target
 
-- Fixed blank `localhost:8081` browser preview.
-- Root cause: missing `react-native-web` and `react-dom`.
-- Added Expo-compatible web runtime packages.
-- Verified app renders in browser with 0 runtime errors.
+- Locked Expo platforms to iOS and Android.
+- Added Android Studio emulator and iPhone demo scripts.
+- Kept manual QR JSON input as a phone-demo fallback when camera scanning is unavailable.
 
 ### Dashboard Upgrade
 
@@ -724,16 +735,16 @@ Covers:
 
 ## Demo Tips
 
-1. Start web preview:
+1. Start the Android Studio emulator, then run:
 
    ```bash
-   npx expo start --web --localhost --port 8081
+   npm run demo:android
    ```
 
-2. Open:
+2. For the iPhone face-to-face demo, install Expo Go or connect the iPhone, then run:
 
-   ```text
-   http://localhost:8081
+   ```bash
+   npm run demo:ios
    ```
 
 3. Enter a Benta amount and save.
@@ -752,11 +763,7 @@ Covers:
    - Debt
    - Receipts
 
-6. Open scanner from Tracker or route directly:
-
-   ```text
-   http://localhost:8081/scanner
-   ```
+6. Open scanner from Tracker with **Scan Supplier Invoice**.
 
 7. Test with QR JSON:
 

@@ -1,4 +1,4 @@
-import { Link, useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
@@ -70,8 +70,10 @@ const LENDER_OFFERS = [
 ];
 
 const OFFLINE_WARNING = "Naka-Offline Mode. I-save muna sa phone.";
+const DEMO_TRANSACTION_HASH = "0819554161045c5e2ef2a629dbd10396d504f76862739ceebf8452addf6c9489";
 
 const NAV_ITEMS = ["Profile", "Tracker", "Debt", "Receipts"];
+const BENTA_KEYPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "backspace", "0", "done"];
 
 const BUSINESS_DEBTS = [
   {
@@ -91,6 +93,7 @@ const BUSINESS_DEBTS = [
 ];
 
 export default function KahaScreen() {
+  const router = useRouter();
   const network = useNetworkStatus();
   const insets = useSafeAreaInsets(); // 4-E: safe area for offline banner
   const [bentaAmount, setBentaAmount] = useState("");
@@ -101,6 +104,7 @@ export default function KahaScreen() {
   const [statusMessage, setStatusMessage] = useState("");
   const [activeRange, setActiveRange] = useState("week");
   const [activeSection, setActiveSection] = useState("Profile");
+  const [isBentaKeypadVisible, setIsBentaKeypadVisible] = useState(false);
   const [receipts, setReceipts] = useState([]); // 4-D: live receipts
   const [loans, setLoans] = useState([]); // microloan records
 
@@ -192,10 +196,23 @@ export default function KahaScreen() {
       }
 
       setBentaAmount("");
+      setIsBentaKeypadVisible(false);
     } catch (error) {
       Alert.alert("Benta error", error.message);
     } finally {
       setIsSavingBenta(false);
+    }
+  }
+
+  function handleAddBentaDigit(key) {
+    setBentaAmount((value) => {
+      if (key === "backspace") return value.slice(0, -1);
+      if (key === "done") return value;
+      return `${value}${key}`;
+    });
+
+    if (key === "done") {
+      setIsBentaKeypadVisible(false);
     }
   }
 
@@ -239,7 +256,14 @@ export default function KahaScreen() {
       };
       await appendLoan(loanRecord);
       await refreshLedger();
-      setStatusMessage("✅ Natanggap ang ₱" + offer.amountPhpc.toLocaleString() + " mula sa " + offer.name + "!");
+      setStatusMessage(
+        "✅ Natanggap ang ₱" +
+          offer.amountPhpc.toLocaleString() +
+          " mula sa " +
+          offer.name +
+          ". TX: " +
+          result.transactionHash,
+      );
     } catch (e) {
       setStatusMessage("❌ Loan failed: " + e.message);
     }
@@ -256,7 +280,12 @@ export default function KahaScreen() {
       if (!result.success) throw new Error(result.error);
       await updateLoanStatus(loan.id, "paid");
       await refreshLedger();
-      setStatusMessage("✅ Nabayaran na ang utang sa " + loan.lenderName + "!");
+      setStatusMessage(
+        "✅ Nabayaran na ang utang sa " +
+          loan.lenderName +
+          ". TX: " +
+          result.transactionHash,
+      );
     } catch (e) {
       setStatusMessage("❌ Payment failed: " + e.message);
     }
@@ -331,10 +360,15 @@ export default function KahaScreen() {
           value={bentaAmount}
           onChangeText={setBentaAmount}
           keyboardType="number-pad"
+          showSoftInputOnFocus={false}
+          onFocus={() => setIsBentaKeypadVisible(true)}
           placeholder="Hal. 2500"
           placeholderTextColor="#918A7F"
           style={styles.input}
         />
+        {isBentaKeypadVisible ? (
+          <MobileNumberPad onPressKey={handleAddBentaDigit} />
+        ) : null}
         <Pressable
           accessibilityRole="button"
           disabled={isSavingBenta}
@@ -383,6 +417,7 @@ export default function KahaScreen() {
           stageMeta={stageMeta}
           controlState={controlState}
           onReceiveLoan={handleReceiveLoan}
+          onOpenScanner={() => router.push("/scanner")}
           statusMessage={statusMessage}
         />
       ) : null}
@@ -412,6 +447,39 @@ function LoadingScreen() {
       <View style={styles.loadingMark} />
       <Text style={styles.loadingTitle}>Loading SariSync Ledger</Text>
       <Text style={styles.loadingText}>Checking connection and local Kaha records...</Text>
+    </View>
+  );
+}
+
+function MobileNumberPad({ onPressKey }) {
+  return (
+    <View style={styles.numberPad} accessibilityLabel="Benta on-screen number pad">
+      {BENTA_KEYPAD_KEYS.map((key) => {
+        const label = key === "backspace" ? "Back" : key === "done" ? "Done" : key;
+
+        return (
+          <Pressable
+            key={key}
+            accessibilityRole="button"
+            accessibilityLabel={key === "backspace" ? "Delete last digit" : label}
+            onPress={() => onPressKey(key)}
+            style={({ pressed }) => [
+              styles.numberPadKey,
+              key === "done" && styles.numberPadDone,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text
+              style={[
+                styles.numberPadKeyText,
+                key === "done" && styles.numberPadDoneText,
+              ]}
+            >
+              {label}
+            </Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -459,7 +527,7 @@ function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit }) {
   );
 }
 
-function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlState, onReceiveLoan, statusMessage }) {
+function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlState, onReceiveLoan, onOpenScanner, statusMessage }) {
   const isReadOnly = stage === CREDIT_STAGES.READ_ONLY;
   const [isRequesting, setIsRequesting] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState(null);
@@ -527,11 +595,9 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
             </>
           )}
 
-          <Link href="/scanner" asChild>
-            <Pressable style={[styles.secondaryButton, { marginTop: 12 }]}>
-              <Text style={styles.secondaryButtonText}>Scan Supplier Invoice</Text>
-            </Pressable>
-          </Link>
+          <Pressable onPress={onOpenScanner} style={[styles.secondaryButton, { marginTop: 12 }]}>
+            <Text style={styles.secondaryButtonText}>Scan Supplier Invoice</Text>
+          </Pressable>
         </>
       )}
 
@@ -653,6 +719,9 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
         autoCapitalize="none"
         autoCorrect={false}
       />
+      <Text style={[styles.bodyText, { fontSize: 11 }]}>
+        Sample Testnet TX: {DEMO_TRANSACTION_HASH}
+      </Text>
       <Pressable
         disabled={isValidating || !validateHash.trim()}
         onPress={handleValidate}
@@ -970,6 +1039,33 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#17231D",
     backgroundColor: "#FFFEFB",
+  },
+  numberPad: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  numberPadKey: {
+    width: "31.5%",
+    minHeight: 48,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    borderColor: "#D4CEC1",
+    borderWidth: 1,
+    backgroundColor: "#FDFBF6",
+  },
+  numberPadDone: {
+    backgroundColor: "#17231D",
+    borderColor: "#17231D",
+  },
+  numberPadKeyText: {
+    color: "#17231D",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  numberPadDoneText: {
+    color: "#FFFFFF",
   },
   primaryButton: {
     minHeight: 50,

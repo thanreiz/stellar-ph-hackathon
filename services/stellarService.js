@@ -20,13 +20,13 @@ if (!_SECRET_KEY || !_PUBLIC_KEY) {
   );
 }
 
-// Task 2-C — 5-second Horizon submission timeout (module-scope, reusable)
-const HORIZON_TIMEOUT_MS = 5000;
+// Task 2-C — demo-safe Horizon submission timeout (module-scope, reusable)
+const HORIZON_TIMEOUT_MS = 20000;
 
 function horizonTimeout() {
   return new Promise((_, reject) =>
     setTimeout(
-      () => reject(new Error('[SariSync] Horizon Testnet did not respond within 5s. Try again.')),
+      () => reject(new Error('[SariSync] Horizon Testnet did not respond within 20s. Try again.')),
       HORIZON_TIMEOUT_MS
     )
   );
@@ -151,7 +151,7 @@ export async function submitInventoryFinancingSettlement({
 
     transaction.sign(keypair);
 
-    // Task 2-C — enforce 5-second Horizon submission timeout
+    // Task 2-C — enforce Horizon submission timeout
     const response = await Promise.race([
       server.submitTransaction(transaction),
       horizonTimeout(),
@@ -278,4 +278,3 @@ export async function validateStellarTransaction(txHash) {
     return { success: false, error: 'Transaction not found on Horizon Testnet.' };
   }
 }
-
