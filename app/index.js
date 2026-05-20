@@ -550,8 +550,8 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                 </Text>
               </>
             )}
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
-              <Pressable style={[styles.primaryButton, { flex: 1 }]} onPress={() => handleRequest(selectedOffer)}>
+            <View style={{ flexDirection: "row", marginTop: 16 }}>
+              <Pressable style={[styles.primaryButton, { flex: 1, marginRight: 8 }]} onPress={() => handleRequest(selectedOffer)}>
                 <Text style={styles.primaryButtonText}>{isRequesting ? "Naghihintay..." : "Tanggapin"}</Text>
               </Pressable>
               <Pressable style={[styles.secondaryButton, { flex: 1, marginTop: 0 }]} onPress={() => setSelectedOffer(null)}>
@@ -693,8 +693,8 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
                 </Text>
               </>
             )}
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 16 }}>
-              <Pressable style={[styles.primaryButton, { flex: 1, backgroundColor: "#FF3B30" }]} onPress={() => handleRepay(confirmLoan)}>
+            <View style={{ flexDirection: "row", marginTop: 16 }}>
+              <Pressable style={[styles.primaryButton, { flex: 1, marginRight: 8, backgroundColor: "#FF3B30" }]} onPress={() => handleRepay(confirmLoan)}>
                 <Text style={styles.primaryButtonText}>{isRepaying ? "Nagbabayad..." : "Bayaran"}</Text>
               </Pressable>
               <Pressable style={[styles.secondaryButton, { flex: 1, marginTop: 0 }]} onPress={() => setConfirmLoan(null)}>
@@ -1141,12 +1141,12 @@ const styles = StyleSheet.create({
   lenderCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
     borderColor: "#D4CEC1",
     borderWidth: 1,
     borderRadius: 10,
     padding: 12,
     backgroundColor: "#FAFAF7",
+    marginTop: 8,
   },
   loanButton: {
     backgroundColor: "#007AFF",
@@ -1205,11 +1205,6 @@ const styles = StyleSheet.create({
     padding: 24,
     width: "100%",
     maxWidth: 420,
-    gap: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 20,
-    elevation: 10,
   },
   modalTitle: {
     fontSize: 20,
