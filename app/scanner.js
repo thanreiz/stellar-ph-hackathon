@@ -35,7 +35,7 @@ export default function ScannerScreen() {
   const [totalSyncedBenta, setTotalSyncedBenta] = useState(0);
   const [invoice, setInvoice] = useState(null);
   const [scanError, setScanError] = useState("");
-  const [hasScanned, setHasScanned] = useState(false);
+  const [scanned, setScanned] = useState(false);
   const [isSettling, setIsSettling] = useState(false); // 4-B: rage-click guard (already existed)
   const [settlementResult, setSettlementResult] = useState(null);
   const [showQrError, setShowQrError] = useState(false); // 4-C: QR error modal state
@@ -58,9 +58,9 @@ export default function ScannerScreen() {
   );
 
   function handleBarcodeScanned(event) {
-    if (hasScanned) return;
+    if (scanned) return;
 
-    setHasScanned(true);
+    setScanned(true);
     setSettlementResult(null);
 
     try {
@@ -126,7 +126,7 @@ export default function ScannerScreen() {
               style={styles.errorButton}
               onPress={() => {
                 setShowQrError(false);
-                setHasScanned(false); // 4-C: reactivates the camera
+                setScanned(false); // 4-C: reactivates the camera
               }}
             >
               <Text style={styles.errorButtonText}>OK</Text>
@@ -158,7 +158,7 @@ export default function ScannerScreen() {
             style={styles.camera}
             facing="back"
             barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={hasScanned ? undefined : handleBarcodeScanned}
+            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
           />
         )}
       </View>
@@ -166,7 +166,7 @@ export default function ScannerScreen() {
       <Pressable
         style={styles.secondaryButton}
         onPress={() => {
-          setHasScanned(false); // 4-C: explicit camera reset
+          setScanned(false); // 4-C: explicit camera reset
           setScanError("");
           setSettlementResult(null);
           setShowQrError(false);

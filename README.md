@@ -171,7 +171,8 @@ The document action is disabled because full document generation is expected to 
 
 | Stage | Condition | Loan Limit | Button |
 | --- | --- | ---: | --- |
-| Micro-Sari (Starter) | total synced Benta <= 30000 | ₱3,500 | Pondohan ang Upgrade |
+| Read-Only (Starter) | total synced Benta < 5000 | ₱0 | *Hidden* |
+| Micro-Sari (Starter) | 5000 <= total synced Benta <= 30000 | ₱3,500 | Pondohan ang Upgrade |
 | Corner Store (Growth) | total synced Benta > 30000 | ₱7,500 | Utangin ang kulang |
 
 The MVP Tiwala Score:
@@ -405,7 +406,7 @@ rg -n "<blocked terms and blocked wallet package>" -S . -g '!node_modules' -g '!
 
 Last run during development:
 
-- `npm test`: 12 tests passing
+- `npm test`: 21 tests passing
 - `npx expo-doctor`: 17/17 checks passing
 - `npx expo export --platform web --output-dir dist-web`: successful
 - Browser preview: renders at `http://localhost:8081`
