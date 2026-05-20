@@ -6,6 +6,7 @@ export const STORAGE_KEYS = {
   OUTSTANDING_BALANCE: 'sarisync:outstandingLoanBalance', // BR5 — stage-drop debt lock
   LAST_STAGE:          'sarisync:lastStage',              // BR5 — track last credit stage
   RECEIPTS:            'sarisync:receipts',               // live receipt log
+  LOANS:               'sarisync:loans',                  // microloan records
 };
 
 function safeJsonParse(value, fallback) {
@@ -196,3 +197,42 @@ export async function appendReceipt(receipt) {
   const updated = [receipt, ...existing];
   await AsyncStorage.setItem(STORAGE_KEYS.RECEIPTS, JSON.stringify(updated));
 }
+
+// ── Microloan records ─────────────────────────────────────────────────────────
+
+/**
+ * Returns all stored loan records, newest first.
+ * Each loan: { id, lenderName, lenderPublicKey, amountPhpc, amountPhpDisplay, txHash, timestamp, status }
+ * status: 'active' | 'paid'
+ */
+export async function getLoans() {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.LOANS);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Prepends a new loan record (newest first). */
+export async function appendLoan(loan) {
+  const existing = await getLoans();
+  const updated = [loan, ...existing];
+  await AsyncStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(updated));
+}
+
+/** Updates a specific loan's status field by id. */
+export async function updateLoanStatus(loanId, status) {
+  const existing = await getLoans();
+  const updated = existing.map(l => l.id === loanId ? { ...l, status } : l);
+  await AsyncStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(updated));
+}
+
+/** Returns total active (unpaid) loan capital in PHP display units. */
+export async function getTotalCapitalFromLoans() {
+  const loans = await getLoans();
+  return loans
+    .filter(l => l.status === 'active')
+    .reduce((sum, l) => sum + Number(l.amountPhpDisplay || 0), 0);
+}
+

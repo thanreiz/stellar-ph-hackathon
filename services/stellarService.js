@@ -168,3 +168,114 @@ export async function submitInventoryFinancingSettlement({
     };
   }
 }
+
+/**
+ * Receive a PHPC loan from a microlending company.
+ * The lender's keypair signs a payment to the store's public key.
+ */
+export async function receiveLoanFromLender({ lenderSecretKey, amountPhpc }) {
+  try {
+    const config = getStellarConfig();
+    const server = getHorizonServer();
+
+    const lenderKeypair = Keypair.fromSecret(lenderSecretKey);
+    const lenderAccount = await server.loadAccount(lenderKeypair.publicKey());
+    const phpcAsset = new Asset('PHPC', config.phpcIssuer);
+
+    const transaction = new TransactionBuilder(lenderAccount, {
+      fee: BASE_FEE,
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: config.storePublicKey,
+          asset: phpcAsset,
+          amount: normalizeAmount(amountPhpc),
+        })
+      )
+      .addMemo(Memo.text('SariSync Loan'))
+      .setTimeout(60)
+      .build();
+
+    transaction.sign(lenderKeypair);
+
+    const response = await Promise.race([
+      server.submitTransaction(transaction),
+      horizonTimeout(),
+    ]);
+
+    return { success: true, transactionHash: response.hash };
+  } catch (error) {
+    return { success: false, error: extractHorizonError(error) };
+  }
+}
+
+/**
+ * Repay a PHPC loan back to a lender's public key.
+ * Signed by the store's secret key.
+ */
+export async function repayLoan({ lenderPublicKey, amountPhpc, memo = 'SariSync Repay' }) {
+  try {
+    const config = getStellarConfig();
+    validateConfig(config);
+
+    const server = getHorizonServer();
+    const storeKeypair = Keypair.fromSecret(config.storeSecretKey);
+    const storeAccount = await server.loadAccount(config.storePublicKey);
+    const phpcAsset = new Asset('PHPC', config.phpcIssuer);
+
+    const transaction = new TransactionBuilder(storeAccount, {
+      fee: BASE_FEE,
+      networkPassphrase: Networks.TESTNET,
+    })
+      .addOperation(
+        Operation.payment({
+          destination: lenderPublicKey,
+          asset: phpcAsset,
+          amount: normalizeAmount(amountPhpc),
+        })
+      )
+      .addMemo(Memo.text(memo.slice(0, 28)))
+      .setTimeout(60)
+      .build();
+
+    transaction.sign(storeKeypair);
+
+    const response = await Promise.race([
+      server.submitTransaction(transaction),
+      horizonTimeout(),
+    ]);
+
+    return { success: true, transactionHash: response.hash };
+  } catch (error) {
+    return { success: false, error: extractHorizonError(error) };
+  }
+}
+
+/**
+ * Validate a Stellar transaction hash — queries Horizon and returns parsed result.
+ */
+export async function validateStellarTransaction(txHash) {
+  try {
+    if (!txHash || typeof txHash !== 'string' || txHash.length < 10) {
+      return { success: false, error: 'Invalid transaction hash.' };
+    }
+
+    const server = getHorizonServer();
+    const tx = await server.transactions().transaction(txHash.trim()).call();
+
+    return {
+      success: true,
+      hash: tx.hash,
+      ledger: tx.ledger,
+      createdAt: tx.created_at,
+      sourceAccount: tx.source_account,
+      operationCount: tx.operation_count,
+      memo: tx.memo || null,
+      successful: tx.successful,
+    };
+  } catch (error) {
+    return { success: false, error: 'Transaction not found on Horizon Testnet.' };
+  }
+}
+
