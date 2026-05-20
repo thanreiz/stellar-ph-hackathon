@@ -1,16 +1,36 @@
 import {
   Asset,
   BASE_FEE,
-  Horizon,
   Keypair,
   Memo,
   Networks,
   Operation,
   TransactionBuilder,
 } from "@stellar/stellar-sdk";
-import { getSariSyncWalletStellar } from "./walletSdkService";
+import { getHorizonServer, getSariSyncWalletStellar } from "./walletSdkService";
 
-const DEFAULT_HORIZON_URL = "https://horizon-testnet.stellar.org";
+const _SECRET_KEY = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+const _PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY;
+
+if (!_SECRET_KEY || !_PUBLIC_KEY) {
+  throw new Error(
+    '[SariSync] Stellar keypair is not configured.\n' +
+    'Copy .env.example to .env and fill in your Testnet keypair before starting the app.\n' +
+    'See .env.example for instructions.'
+  );
+}
+
+// Task 2-C — 5-second Horizon submission timeout (module-scope, reusable)
+const HORIZON_TIMEOUT_MS = 5000;
+
+function horizonTimeout() {
+  return new Promise((_, reject) =>
+    setTimeout(
+      () => reject(new Error('[SariSync] Horizon Testnet did not respond within 5s. Try again.')),
+      HORIZON_TIMEOUT_MS
+    )
+  );
+}
 
 function getEnvValue(key, fallback = "") {
   return process.env[key] || fallback;
@@ -23,7 +43,6 @@ function getStellarConfig() {
     phpcIssuer: getEnvValue("EXPO_PUBLIC_PHPC_ISSUER"),
     usdcIssuer: getEnvValue("EXPO_PUBLIC_USDC_ISSUER"),
     network: getEnvValue("EXPO_PUBLIC_STELLAR_NETWORK", "testnet"),
-    horizonUrl: getEnvValue("EXPO_PUBLIC_HORIZON_URL", DEFAULT_HORIZON_URL),
   };
 }
 
@@ -65,8 +84,16 @@ function extractHorizonError(error) {
 export async function submitInventoryFinancingSettlement({
   supplierPubkey,
   amountUsdc,
-  sendMaxPhpc,
+  sendMaxPhpc,   // required numeric string — loan limit for this store's credit stage
 }) {
+  // Task 2-B guard — sendMaxPhpc is required and must be numeric
+  if (!sendMaxPhpc || isNaN(parseFloat(sendMaxPhpc))) {
+    return {
+      success: false,
+      error: 'sendMaxPhpc is required and must be a numeric string.',
+    };
+  }
+
   try {
     const config = getStellarConfig();
     validateConfig(config);
@@ -77,13 +104,32 @@ export async function submitInventoryFinancingSettlement({
 
     const keypair = Keypair.fromSecret(config.storeSecretKey);
     getSariSyncWalletStellar();
-    const server = new Horizon.Server(config.horizonUrl);
+
+    // Task 2-D — single Horizon client via walletSdkService singleton
+    const server = getHorizonServer();
     const sourceAccount = await server.loadAccount(keypair.publicKey());
+
+    // Task 2-A — PHPC trustline check before building the transaction
+    const phpcIssuer = process.env.EXPO_PUBLIC_PHPC_ISSUER;
+    const hasTrustline = sourceAccount.balances.some(
+      b => b.asset_type !== 'native'
+        && b.asset_code === 'PHPC'
+        && b.asset_issuer === phpcIssuer
+    );
+
+    if (!hasTrustline) {
+      return {
+        success: false,
+        error:
+          'Store wallet has no PHPC trustline. ' +
+          'Fund the Testnet account and add a PHPC trustline at laboratory.stellar.org before transacting.',
+      };
+    }
 
     const phpcAsset = new Asset("PHPC", config.phpcIssuer);
     const usdcAsset = new Asset("USDC", config.usdcIssuer);
     const destinationAmount = normalizeAmount(amountUsdc);
-    const sendMax = normalizeAmount(sendMaxPhpc || Number(amountUsdc) * 60);
+    const sendMax = normalizeAmount(sendMaxPhpc);
 
     const transaction = new TransactionBuilder(sourceAccount, {
       fee: BASE_FEE,
@@ -105,7 +151,11 @@ export async function submitInventoryFinancingSettlement({
 
     transaction.sign(keypair);
 
-    const response = await server.submitTransaction(transaction);
+    // Task 2-C — enforce 5-second Horizon submission timeout
+    const response = await Promise.race([
+      server.submitTransaction(transaction),
+      horizonTimeout(),
+    ]);
 
     return {
       success: true,

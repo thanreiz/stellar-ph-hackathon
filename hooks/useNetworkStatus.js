@@ -1,69 +1,56 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import NetInfo from '@react-native-community/netinfo';
 
-export default function useNetworkStatus() {
-  const [networkState, setNetworkState] = useState({
-    isConnected: true,
-    isInternetReachable: true,
-    isOffline: false,
+const STABLE_CONNECTION_MS = 3000;
+
+export function useNetworkStatus() {
+  const [status, setStatus] = useState({
+    isConnected: false,
+    isInternetReachable: false,
+    isOffline: true,
     connectionType: null,
-    hasCheckedInitialStatus: false
+    hasCheckedInitialStatus: false,
   });
 
+  const stableTimer = useRef(null);
+
   useEffect(() => {
-    let isMounted = true;
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const fullyConnected =
+        state.isConnected === true && state.isInternetReachable === true;
 
-    async function loadInitialNetworkState() {
-      try {
-        const state = await NetInfo.fetch();
-
-        if (!isMounted) return;
-
-        const isConnected = Boolean(state.isConnected);
-        const isInternetReachable = state.isInternetReachable !== false;
-        const isOffline = !isConnected || !isInternetReachable;
-
-        setNetworkState({
-          isConnected,
-          isInternetReachable,
-          isOffline,
-          connectionType: state.type,
-          hasCheckedInitialStatus: true
-        });
-      } catch {
-        if (!isMounted) return;
-
-        setNetworkState({
+      if (!fullyConnected) {
+        // Lose connection immediately — clear any pending "come online" timer.
+        clearTimeout(stableTimer.current);
+        setStatus({
           isConnected: false,
           isInternetReachable: false,
           isOffline: true,
-          connectionType: null,
-          hasCheckedInitialStatus: true
+          connectionType: state.type ?? null,
+          hasCheckedInitialStatus: true,
         });
+      } else {
+        // Only confirm online after 3 stable seconds.
+        clearTimeout(stableTimer.current);
+        stableTimer.current = setTimeout(() => {
+          setStatus({
+            isConnected: true,
+            isInternetReachable: true,
+            isOffline: false,
+            connectionType: state.type ?? null,
+            hasCheckedInitialStatus: true,
+          });
+        }, STABLE_CONNECTION_MS);
       }
-    }
-
-    loadInitialNetworkState();
-
-    const unsubscribe = NetInfo.addEventListener((state) => {
-      const isConnected = Boolean(state.isConnected);
-      const isInternetReachable = state.isInternetReachable !== false;
-      const isOffline = !isConnected || !isInternetReachable;
-
-      setNetworkState({
-        isConnected,
-        isInternetReachable,
-        isOffline,
-        connectionType: state.type,
-        hasCheckedInitialStatus: true
-      });
     });
 
     return () => {
-      isMounted = false;
       unsubscribe();
+      clearTimeout(stableTimer.current);
     };
   }, []);
 
-  return networkState;
+  return status;
 }
+
+export default useNetworkStatus;

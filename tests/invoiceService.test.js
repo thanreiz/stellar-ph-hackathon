@@ -4,6 +4,7 @@ import {
   evaluateInvoiceEligibility,
   parseSupplierInvoiceQr,
 } from "../services/invoiceService.js";
+import { CREDIT_STAGES } from "../services/creditLadderService.js";
 
 describe("supplier invoice QR parsing", () => {
   it("accepts a valid B2B supplier invoice payload", () => {
@@ -30,13 +31,43 @@ describe("supplier invoice QR parsing", () => {
   });
 
   it("marks invoice as eligible only when USDC amount is within loan limit", () => {
-    assert.deepEqual(evaluateInvoiceEligibility({ amount_usdc: 50 }, 3500), {
-      eligible: true,
-      shortfall: 0,
-    });
-    assert.deepEqual(evaluateInvoiceEligibility({ amount_usdc: 5000 }, 3500), {
-      eligible: false,
-      shortfall: 1500,
-    });
+    assert.deepEqual(
+      evaluateInvoiceEligibility({ amount_usdc: 50 }, CREDIT_STAGES.MICRO_SARI, 3500),
+      { eligible: true, shortfall: 0 },
+    );
+    assert.deepEqual(
+      evaluateInvoiceEligibility({ amount_usdc: 5000 }, CREDIT_STAGES.MICRO_SARI, 3500),
+      { eligible: false, shortfall: 1500 },
+    );
+  });
+});
+
+describe("BR5 stage-drop debt lock", () => {
+  it("blocks new loans when user dropped from Corner Store and outstanding balance > new limit", () => {
+    const result = evaluateInvoiceEligibility(
+      { amount_usdc: 50 },
+      CREDIT_STAGES.MICRO_SARI,  // current stage (demoted)
+      3500,                       // new loan limit
+      4000,                       // outstandingBalance > loanLimit → locked
+      CREDIT_STAGES.CORNER_STORE, // lastStage — was Corner Store
+    );
+
+    assert.equal(result.eligible, false);
+    assert.equal(result.reason, "BR5_STAGE_DROP_LOCK");
+    assert.ok(typeof result.message === "string" && result.message.length > 0);
+  });
+
+  it("allows loans when outstanding balance is below new stage limit", () => {
+    const result = evaluateInvoiceEligibility(
+      { amount_usdc: 50 },
+      CREDIT_STAGES.MICRO_SARI,  // current stage
+      3500,                       // new loan limit
+      3000,                       // outstandingBalance < loanLimit → NOT locked
+      CREDIT_STAGES.CORNER_STORE, // lastStage
+    );
+
+    // Not locked by BR5 — falls through to amount eligibility check
+    assert.equal(result.eligible, true);
+    assert.equal(result.shortfall, 0);
   });
 });

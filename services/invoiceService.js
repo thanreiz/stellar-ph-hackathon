@@ -1,3 +1,5 @@
+import { CREDIT_STAGES } from './creditLadderService.js';
+
 export function parseSupplierInvoiceQr(rawPayload) {
   let parsed;
 
@@ -24,7 +26,40 @@ export function parseSupplierInvoiceQr(rawPayload) {
   };
 }
 
-export function evaluateInvoiceEligibility(invoice, loanLimit) {
+/**
+ * Evaluates whether a scanned invoice is eligible for financing.
+ *
+ * @param {object} invoice          - Parsed invoice with amount_usdc field
+ * @param {string} stage            - Current CREDIT_STAGES value
+ * @param {number} loanLimit        - PHP loan limit for the current stage
+ * @param {number} outstandingBalance - Outstanding loan balance (default 0)
+ * @param {string|null} lastStage   - Stage recorded at last sync (default null)
+ *
+ * Returns { eligible, shortfall } on success, or
+ * { eligible: false, reason, message } when a business rule blocks the loan.
+ */
+export function evaluateInvoiceEligibility(
+  invoice,
+  stage,
+  loanLimit,
+  outstandingBalance = 0,
+  lastStage = null,
+) {
+  // BR5: lock new loans if the user dropped from Corner Store to a lower stage
+  // and outstanding balance still exceeds their new limit
+  if (
+    lastStage === CREDIT_STAGES.CORNER_STORE &&
+    stage !== CREDIT_STAGES.CORNER_STORE &&
+    outstandingBalance > loanLimit
+  ) {
+    return {
+      eligible: false,
+      reason: 'BR5_STAGE_DROP_LOCK',
+      message:
+        'Hindi pwede mag-utang muna. Babaan muna ang natitirang utang bago makakuha ng bagong financing.',
+    };
+  }
+
   const amountUsdc = Number(invoice?.amount_usdc || 0);
   const limit = Number(loanLimit || 0);
   const shortfall = Math.max(0, amountUsdc - limit);

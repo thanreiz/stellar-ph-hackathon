@@ -2,6 +2,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,15 +10,20 @@ import {
   View,
 } from "react-native";
 import {
+  CREDIT_STAGES,
   calculateTiwalaScore,
   evaluateCreditStage,
   getLoanLimitForStage,
+  getStageMetadata,
 } from "../services/creditLadderService";
 import {
   evaluateInvoiceEligibility,
   parseSupplierInvoiceQr,
 } from "../services/invoiceService";
-import { getTotalSyncedSalesVolume } from "../services/storageService";
+import {
+  appendReceipt,
+  getTotalSyncedSalesVolume,
+} from "../services/storageService";
 import { submitInventoryFinancingSettlement } from "../services/stellarService";
 import { formatPhp, formatPublicKey, formatUsdc } from "../utils/formatters";
 
@@ -30,15 +36,17 @@ export default function ScannerScreen() {
   const [invoice, setInvoice] = useState(null);
   const [scanError, setScanError] = useState("");
   const [hasScanned, setHasScanned] = useState(false);
-  const [isSettling, setIsSettling] = useState(false);
+  const [isSettling, setIsSettling] = useState(false); // 4-B: rage-click guard (already existed)
   const [settlementResult, setSettlementResult] = useState(null);
+  const [showQrError, setShowQrError] = useState(false); // 4-C: QR error modal state
 
   const stage = useMemo(() => evaluateCreditStage(totalSyncedBenta), [totalSyncedBenta]);
+  const stageMeta = getStageMetadata(stage);
   const loanLimit = getLoanLimitForStage(stage);
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
   const eligibility = useMemo(
-    () => evaluateInvoiceEligibility(invoice, loanLimit),
-    [invoice, loanLimit],
+    () => evaluateInvoiceEligibility(invoice, stage, loanLimit),
+    [invoice, stage, loanLimit],
   );
 
   useFocusEffect(
@@ -62,27 +70,71 @@ export default function ScannerScreen() {
     } catch (error) {
       setInvoice(null);
       setScanError(error.message);
+      // 4-C: show "Mali ang QR Code" modal on parse failure
+      setShowQrError(true);
     }
   }
 
+  // 4-B: rage-click guard — isSettling is set synchronously before the first await
   async function handleSettleInvoice() {
     if (!invoice || !eligibility.eligible) return;
+    if (isSettling) return;
 
     setIsSettling(true);
     setSettlementResult(null);
 
-    const result = await submitInventoryFinancingSettlement({
-      supplierPubkey: invoice.supplier_pubkey,
-      amountUsdc: invoice.amount_usdc,
-      sendMaxPhpc: loanLimit,
-    });
+    try {
+      const result = await submitInventoryFinancingSettlement({
+        supplierPubkey: invoice.supplier_pubkey,
+        amountUsdc: invoice.amount_usdc.toFixed(7),
+        sendMaxPhpc: loanLimit.toFixed(7),
+      });
 
-    setSettlementResult(result);
-    setIsSettling(false);
+      // 4-D: append live receipt on successful settlement
+      if (result.success) {
+        await appendReceipt({
+          id: result.transactionHash,
+          type: 'FINANCING',
+          amountUsdc: invoice.amount_usdc,
+          supplierPubkey: invoice.supplier_pubkey,
+          timestamp: Date.now(),
+        });
+      }
+
+      setSettlementResult(result);
+    } finally {
+      setIsSettling(false);
+    }
   }
+
+  // 4-D: Truncated hash for "Bayad Na" display
+  const shortHash = settlementResult?.success && settlementResult.transactionHash
+    ? `${settlementResult.transactionHash.slice(0, 6)}...${settlementResult.transactionHash.slice(-6)}`
+    : null;
 
   return (
     <ScrollView contentContainerStyle={styles.screen}>
+      {/* 4-C: "Mali ang QR Code" error modal — resets camera on dismiss */}
+      <Modal visible={showQrError} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.errorModal}>
+            <Text style={styles.errorTitle}>Mali ang QR Code</Text>
+            <Text style={styles.errorBody}>
+              I-check ang QR code ng supplier at subukan ulit.
+            </Text>
+            <Pressable
+              style={styles.errorButton}
+              onPress={() => {
+                setShowQrError(false);
+                setHasScanned(false); // 4-C: reactivates the camera
+              }}
+            >
+              <Text style={styles.errorButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.header}>
         <Text style={styles.eyebrow}>B2B supplier invoice</Text>
         <Text style={styles.title}>Scanner</Text>
@@ -114,15 +166,16 @@ export default function ScannerScreen() {
       <Pressable
         style={styles.secondaryButton}
         onPress={() => {
-          setHasScanned(false);
+          setHasScanned(false); // 4-C: explicit camera reset
           setScanError("");
           setSettlementResult(null);
+          setShowQrError(false);
         }}
       >
         <Text style={styles.secondaryButtonText}>Scan Again</Text>
       </Pressable>
 
-      {scanError ? (
+      {scanError && !showQrError ? (
         <View style={styles.errorCard}>
           <Text style={styles.errorText}>{scanError}</Text>
         </View>
@@ -130,7 +183,7 @@ export default function ScannerScreen() {
 
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Current store stage</Text>
-        <Text style={styles.stageName}>{stage.name}</Text>
+        <Text style={styles.stageName}>{stageMeta.name}</Text>
         <Text style={styles.bodyText}>Tiwala Score: {tiwalaScore}</Text>
         <Text style={styles.bodyText}>Loan limit: {formatPhp(loanLimit)}</Text>
       </View>
@@ -149,9 +202,12 @@ export default function ScannerScreen() {
           >
             {eligibility.eligible
               ? "Eligible for B2B inventory financing"
-              : `Shortfall: ${formatPhp(eligibility.shortfall)}`}
+              : eligibility.reason === "BR5_STAGE_DROP_LOCK"
+                ? eligibility.message
+                : `Shortfall: ${formatPhp(eligibility.shortfall)}`}
           </Text>
 
+          {/* 4-B: disabled while settling to prevent rage-click double-submit */}
           <Pressable
             disabled={!eligibility.eligible || isSettling}
             onPress={handleSettleInvoice}
@@ -162,7 +218,7 @@ export default function ScannerScreen() {
             ]}
           >
             <Text style={styles.primaryButtonText}>
-              {isSettling ? "Sine-settle..." : stage.actionLabel}
+              {isSettling ? "Sine-settle..." : stageMeta.actionLabel}
             </Text>
           </Pressable>
         </View>
@@ -186,11 +242,22 @@ export default function ScannerScreen() {
           >
             {settlementResult.success ? "Bayad Na" : "Settlement failed"}
           </Text>
-          <Text style={styles.bodyText}>
-            {settlementResult.success
-              ? settlementResult.transactionHash
-              : settlementResult.error}
-          </Text>
+
+          {settlementResult.success ? (
+            <>
+              {/* 4-D: Truncated hash display for the Bayad Na screen */}
+              <Text style={styles.txHash}>{shortHash}</Text>
+              {/* 4-D: Full selectable hash for the driver's logbook */}
+              <View style={styles.txQrFallback}>
+                <Text style={styles.txQrLabel}>Stellar TX Hash (para sa logbook):</Text>
+                <Text style={styles.txQrValue} selectable>
+                  {settlementResult.transactionHash}
+                </Text>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.bodyText}>{settlementResult.error}</Text>
+          )}
         </View>
       ) : null}
     </ScrollView>
@@ -334,10 +401,77 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "900",
   },
+  // 4-D: Truncated tx hash on the Bayad Na screen
+  txHash: {
+    color: "#17231D",
+    fontWeight: "800",
+    fontSize: 16,
+    letterSpacing: 1,
+  },
+  // 4-D: Selectable full hash for driver logbook
+  txQrFallback: {
+    backgroundColor: "#F7F4EC",
+    borderColor: "#E0DACF",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    gap: 6,
+  },
+  txQrLabel: {
+    color: "#6E766F",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  txQrValue: {
+    color: "#17231D",
+    fontSize: 12,
+    fontWeight: "600",
+    letterSpacing: 0.5,
+  },
   pressed: {
     opacity: 0.86,
   },
   disabled: {
     opacity: 0.55,
+  },
+  // 4-C: Mali ang QR Code modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  errorModal: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 24,
+    gap: 12,
+    width: "100%",
+    maxWidth: 380,
+    alignItems: "center",
+  },
+  errorTitle: {
+    color: "#FF3B30",
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  errorBody: {
+    color: "#4F5A53",
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  errorButton: {
+    backgroundColor: "#17231D",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 32,
+    minWidth: 120,
+    alignItems: "center",
+  },
+  errorButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "900",
+    fontSize: 16,
   },
 });

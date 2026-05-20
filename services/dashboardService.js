@@ -31,6 +31,23 @@ export const SAMPLE_BUSINESS_TRANSACTIONS = [
   },
 ];
 
+// ── Philippine Standard Time helpers ─────────────────────────────────────────
+
+const PST_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8
+
+/**
+ * Returns the UTC millisecond timestamp of midnight PST for the current day.
+ * Used to define "today" in Philippine Standard Time regardless of device locale.
+ */
+function getPSTMidnightUTC() {
+  const nowUTC = Date.now();
+  const nowPST = nowUTC + PST_OFFSET_MS;
+  const midnightPST = nowPST - (nowPST % (24 * 60 * 60 * 1000));
+  return midnightPST - PST_OFFSET_MS; // back to UTC millis
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
 function parseDate(value) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
@@ -48,13 +65,22 @@ function sumRecords(records) {
   return records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
 }
 
-export function getSalesToday(records, now = new Date()) {
-  return sumRecords(
-    records.filter((record) => {
-      const date = parseDate(record.createdAt);
-      return date && sameDay(date, now);
-    }),
-  );
+// ── Exported functions ────────────────────────────────────────────────────────
+
+/**
+ * Returns the total sales amount for "today" in Philippine Standard Time.
+ * Records are matched by their numeric `timestamp` field (ms since epoch).
+ * Falls back to `createdAt` ISO string if `timestamp` is absent (legacy records).
+ */
+export function getSalesToday(syncedLedger = []) {
+  const midnightUTC = getPSTMidnightUTC();
+  return syncedLedger
+    .filter(entry => {
+      // Prefer numeric timestamp; fall back to parsing createdAt for legacy records
+      const ts = entry.timestamp ?? (entry.createdAt ? new Date(entry.createdAt).getTime() : null);
+      return ts !== null && !Number.isNaN(ts) && ts >= midnightUTC;
+    })
+    .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
 }
 
 export function getSalesSeries(records, range, now = new Date()) {
@@ -72,16 +98,29 @@ export function getOfflineControlState(isOffline) {
   };
 }
 
-export function getBusinessSnapshot(salesRecords, transactions = SAMPLE_BUSINESS_TRANSACTIONS) {
+/**
+ * Returns a snapshot of business finances.
+ *
+ * If `receipts` (live AsyncStorage receipts) is non-empty, uses those as the
+ * transaction source so the Receipts module reflects real settlements.
+ * Falls back to SAMPLE_BUSINESS_TRANSACTIONS for the demo when no real
+ * receipts have been recorded yet.
+ *
+ * @param {object[]} salesRecords - Synced sales ledger entries (for earned total)
+ * @param {object[]} receipts     - Live receipts from storageService.getReceipts()
+ */
+export function getBusinessSnapshot(salesRecords, receipts = []) {
   const earned = sumRecords(salesRecords);
+  const source = receipts.length > 0 ? receipts : SAMPLE_BUSINESS_TRANSACTIONS;
 
-  return transactions.reduce(
+  return source.reduce(
     (snapshot, transaction) => {
-      const amount = Number(transaction.amount || 0);
+      const amount = Number(transaction.amount || transaction.amountUsdc || 0);
 
       if (transaction.kind === "expense") snapshot.spent += amount;
       if (transaction.kind === "capital") snapshot.capital += amount;
       if (transaction.kind === "businessDebt") snapshot.businessDebt += amount;
+      // FINANCING receipts contribute to earned, not debt (settlement already logged)
 
       return snapshot;
     },
@@ -93,6 +132,8 @@ export function getBusinessSnapshot(salesRecords, transactions = SAMPLE_BUSINESS
     },
   );
 }
+
+// ── Internal series builders ──────────────────────────────────────────────────
 
 function buildYearSeries(records, now) {
   const labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -136,13 +177,22 @@ function buildMonthSeries(records, now) {
 }
 
 function buildWeekSeries(records, now) {
+  // Build 7-day series without calling getSalesToday to avoid PST-midnight
+  // vs. local-clock mismatch inside the graph builder.
   return Array.from({ length: 7 }, (_, index) => {
     const day = new Date(now);
     day.setDate(now.getDate() - (6 - index));
 
+    const dayAmount = sumRecords(
+      records.filter((record) => {
+        const date = parseDate(record.createdAt);
+        return date && sameDay(date, day);
+      }),
+    );
+
     return {
       label: day.toLocaleDateString("en-US", { weekday: "short" }),
-      amount: getSalesToday(records, day),
+      amount: dayAmount,
     };
   });
 }

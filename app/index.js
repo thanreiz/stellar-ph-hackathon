@@ -9,19 +9,23 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import useNetworkStatus from "../hooks/useNetworkStatus";
 import {
   appendToSyncedSalesLedger,
   createSalesPayload,
   enqueuePendingSale,
   getPendingSyncQueue,
+  getReceipts,
   getSyncedSalesLedger,
   syncPendingSalesQueue,
 } from "../services/storageService";
 import {
+  CREDIT_STAGES,
   calculateTiwalaScore,
   evaluateCreditStage,
   getLoanLimitForStage,
+  getStageMetadata,
 } from "../services/creditLadderService";
 import {
   GRAPH_RANGES,
@@ -31,7 +35,7 @@ import {
   getSalesSeries,
   getSalesToday,
 } from "../services/dashboardService";
-import { formatPhp } from "../utils/formatters";
+import { formatPhp, formatUsdc } from "../utils/formatters";
 
 const OFFLINE_WARNING = "Naka-Offline Mode. I-save muna sa phone.";
 
@@ -54,49 +58,51 @@ const BUSINESS_DEBTS = [
   },
 ];
 
-const RECEIPTS = [
-  { id: "receipt_001", label: "Paid business debt", amount: 900, status: "Bayad Na" },
-  { id: "receipt_002", label: "Received inventory financing", amount: 3500, status: "Validated" },
-  { id: "receipt_003", label: "Supplier stock purchase", amount: 1250, status: "Recorded" },
-];
-
 export default function KahaScreen() {
   const network = useNetworkStatus();
+  const insets = useSafeAreaInsets(); // 4-E: safe area for offline banner
   const [bentaAmount, setBentaAmount] = useState("");
   const [pendingQueue, setPendingQueue] = useState([]);
   const [syncedLedger, setSyncedLedger] = useState([]);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingBenta, setIsSavingBenta] = useState(false); // 4-B: rage-click guard
   const [isLedgerReady, setIsLedgerReady] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [activeRange, setActiveRange] = useState("week");
   const [activeSection, setActiveSection] = useState("Profile");
+  const [receipts, setReceipts] = useState([]); // 4-D: live receipts
 
   const totalSyncedBenta = useMemo(
     () => syncedLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0),
     [syncedLedger],
   );
   const salesToday = useMemo(() => getSalesToday(syncedLedger), [syncedLedger]);
+
+  // stage is now a CREDIT_STAGES string; metadata carries display properties
   const stage = evaluateCreditStage(totalSyncedBenta);
+  const stageMeta = getStageMetadata(stage);
   const loanLimit = getLoanLimitForStage(stage);
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
   const graphSeries = useMemo(
     () => getSalesSeries(syncedLedger, activeRange),
     [activeRange, syncedLedger],
   );
+  // 4-D: pass live receipts; falls back to SAMPLE_BUSINESS_TRANSACTIONS when empty
   const businessSnapshot = useMemo(
-    () => getBusinessSnapshot(syncedLedger, SAMPLE_BUSINESS_TRANSACTIONS),
-    [syncedLedger],
+    () => getBusinessSnapshot(syncedLedger, receipts),
+    [syncedLedger, receipts],
   );
   const controlState = getOfflineControlState(network.isOffline);
   const isLoading = !network.hasCheckedInitialStatus || !isLedgerReady;
 
   const refreshLedger = useCallback(async () => {
-    const [queue, ledger] = await Promise.all([
+    const [queue, ledger, liveReceipts] = await Promise.all([
       getPendingSyncQueue(),
       getSyncedSalesLedger(),
+      getReceipts(), // 4-D: load live receipts on every refresh
     ]);
     setPendingQueue(queue);
     setSyncedLedger(ledger);
+    setReceipts(liveReceipts);
     setIsLedgerReady(true);
   }, []);
 
@@ -131,9 +137,11 @@ export default function KahaScreen() {
     syncWhenOnline();
   }, [network.hasCheckedInitialStatus, network.isOffline, refreshLedger]);
 
+  // 4-B: rage-click guard — disable before the first await
   async function handleAddBenta() {
+    if (isSavingBenta) return;
     setStatusMessage("");
-    setIsSaving(true);
+    setIsSavingBenta(true);
 
     try {
       const payload = createSalesPayload(bentaAmount);
@@ -152,7 +160,7 @@ export default function KahaScreen() {
     } catch (error) {
       Alert.alert("Benta error", error.message);
     } finally {
-      setIsSaving(false);
+      setIsSavingBenta(false);
     }
   }
 
@@ -180,8 +188,9 @@ export default function KahaScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.screen}>
+      {/* 4-E: safe-area-aware offline banner — insets.top prevents it rendering under notch/Dynamic Island */}
       {network.isOffline ? (
-        <View style={styles.offlineBanner}>
+        <View style={[styles.offlineBanner, { marginTop: insets.top }]}>
           <Text style={styles.offlineText}>{OFFLINE_WARNING}</Text>
         </View>
       ) : null}
@@ -248,16 +257,16 @@ export default function KahaScreen() {
         />
         <Pressable
           accessibilityRole="button"
-          disabled={isSaving}
+          disabled={isSavingBenta}
           onPress={handleAddBenta}
           style={({ pressed }) => [
             styles.primaryButton,
             pressed && styles.pressed,
-            isSaving && styles.disabled,
+            isSavingBenta && styles.disabled,
           ]}
         >
           <Text style={styles.primaryButtonText}>
-            {isSaving ? "Sine-save..." : "I-save ang Benta"}
+            {isSavingBenta ? "Sine-save..." : "I-save ang Benta"}
           </Text>
         </Pressable>
         {statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
@@ -283,7 +292,7 @@ export default function KahaScreen() {
       </View>
 
       {activeSection === "Profile" ? (
-        <ProfilePanel stage={stage} tiwalaScore={tiwalaScore} loanLimit={loanLimit} />
+        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} />
       ) : null}
       {activeSection === "Tracker" ? (
         <TrackerPanel
@@ -291,6 +300,7 @@ export default function KahaScreen() {
           transactions={SAMPLE_BUSINESS_TRANSACTIONS}
           loanLimit={loanLimit}
           stage={stage}
+          stageMeta={stageMeta}
           controlState={controlState}
           onAction={handleOnlineOnlyAction}
         />
@@ -304,7 +314,7 @@ export default function KahaScreen() {
       ) : null}
       {activeSection === "Receipts" ? (
         <ReceiptsPanel
-          receipts={RECEIPTS}
+          receipts={receipts}
           controlState={controlState}
           onCreateDocument={handleCreateDocument}
         />
@@ -353,20 +363,22 @@ function SalesGraph({ series }) {
   );
 }
 
-function ProfilePanel({ stage, tiwalaScore, loanLimit }) {
+function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit }) {
   return (
     <View style={styles.card}>
       <Text style={styles.cardLabel}>Profile</Text>
       <Text style={styles.stageName}>Store Settings</Text>
       <InfoRow label="Store type" value="Sari-sari inventory business" />
-      <InfoRow label="Stage" value={stage.name} />
+      <InfoRow label="Stage" value={stageMeta.name} />
       <InfoRow label="Tiwala Score" value={String(tiwalaScore)} />
       <InfoRow label="Loan limit" value={formatPhp(loanLimit)} />
     </View>
   );
 }
 
-function TrackerPanel({ snapshot, transactions, loanLimit, stage, controlState, onAction }) {
+function TrackerPanel({ snapshot, transactions, loanLimit, stage, stageMeta, controlState, onAction }) {
+  const isReadOnly = stage === CREDIT_STAGES.READ_ONLY;
+
   return (
     <View style={styles.card}>
       <Text style={styles.cardLabel}>Tracker</Text>
@@ -378,24 +390,36 @@ function TrackerPanel({ snapshot, transactions, loanLimit, stage, controlState, 
         <MiniMetric label="Debt" value={formatPhp(snapshot.businessDebt)} color="#FF3B30" />
       </View>
       <InfoRow label="Available capital upgrade" value={formatPhp(loanLimit)} />
-      <Text style={styles.bodyText}>Current action: {stage.actionLabel}</Text>
-      {transactions.map((transaction) => (
-        <InfoRow
-          key={transaction.id}
-          label={transaction.label}
-          value={formatPhp(transaction.amount)}
-        />
-      ))}
-      <OnlineActionButton
-        label={stage.actionLabel}
-        controlState={controlState}
-        onPress={() => onAction(stage.actionLabel)}
-      />
-      <Link href="/scanner" asChild>
-        <Pressable style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>Scan Supplier Invoice</Text>
-        </Pressable>
-      </Link>
+
+      {/* 4-A: READ_ONLY state — hide financing button, show unlock message */}
+      {isReadOnly ? (
+        <View style={styles.readOnlyBanner}>
+          <Text style={styles.readOnlyText}>
+            I-record ang ₱5,000 na benta para ma-unlock ang credit at financing.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <Text style={styles.bodyText}>Current action: {stageMeta.actionLabel}</Text>
+          {transactions.map((transaction) => (
+            <InfoRow
+              key={transaction.id}
+              label={transaction.label}
+              value={formatPhp(transaction.amount)}
+            />
+          ))}
+          <OnlineActionButton
+            label={stageMeta.actionLabel}
+            controlState={controlState}
+            onPress={() => onAction(stageMeta.actionLabel)}
+          />
+          <Link href="/scanner" asChild>
+            <Pressable style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>Scan Supplier Invoice</Text>
+            </Pressable>
+          </Link>
+        </>
+      )}
     </View>
   );
 }
@@ -437,18 +461,28 @@ function DebtPanel({ debts, controlState, onAction }) {
   );
 }
 
+/**
+ * 4-D: ReceiptsPanel now shows live receipts from AsyncStorage.
+ * Falls back to a helpful empty-state message when no real transactions exist yet.
+ */
 function ReceiptsPanel({ receipts, controlState, onCreateDocument }) {
   return (
     <View style={styles.card}>
       <Text style={styles.cardLabel}>Receipts</Text>
       <Text style={styles.stageName}>Transaction proof</Text>
-      {receipts.map((receipt) => (
-        <InfoRow
-          key={receipt.id}
-          label={`${receipt.label} • ${receipt.status}`}
-          value={formatPhp(receipt.amount)}
-        />
-      ))}
+      {receipts.length === 0 ? (
+        <Text style={styles.bodyText}>
+          Wala pang na-record na transaksyon. Mag-settle ng supplier invoice para lumabas dito.
+        </Text>
+      ) : (
+        receipts.map((receipt) => (
+          <InfoRow
+            key={receipt.id}
+            label={`${receipt.type ?? "FINANCING"} • ${formatUsdc(receipt.amountUsdc)}`}
+            value={new Date(receipt.timestamp).toLocaleDateString("en-PH")}
+          />
+        ))
+      )}
       <Pressable
         disabled={!controlState.canCreateDocument}
         onPress={onCreateDocument}
@@ -577,6 +611,19 @@ const styles = StyleSheet.create({
   offlineText: {
     color: "#FF3B30",
     fontWeight: "800",
+  },
+  // 4-A: READ_ONLY stage info banner — uses neutral colors from the existing system
+  readOnlyBanner: {
+    backgroundColor: "#F7F4EC",
+    borderColor: "#E0DACF",
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 14,
+  },
+  readOnlyText: {
+    color: "#5D675F",
+    fontWeight: "700",
+    lineHeight: 22,
   },
   metricsGrid: {
     flexDirection: "row",
