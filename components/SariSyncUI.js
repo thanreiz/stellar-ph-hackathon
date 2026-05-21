@@ -4,13 +4,13 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useTheme } from "../context/ThemeContext";
 
 const ICONS = {
-  wallet: "$",
-  trend: "^",
-  loan: "%",
-  proof: "#",
-  moon: ")",
-  sun: "*",
-  key: "@",
+  wallet: "₱",
+  trend: "↗",
+  loan: "¤",
+  proof: "✓",
+  moon: "☾",
+  sun: "☀",
+  key: "🔑",
 };
 
 const TONES = {
@@ -95,6 +95,7 @@ function PillButton({ label, onPress, variant = "primary", disabled = false, sty
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
@@ -136,7 +137,14 @@ function BentoMetricCard({ label, value, tone = "default" }) {
   return (
     <WarmCard style={styles.metricCard}>
       <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
-      <Text style={[styles.metricValue, { color: toneColor }]}>{value}</Text>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.62}
+        numberOfLines={1}
+        style={[styles.metricValue, { color: toneColor }]}
+      >
+        {value}
+      </Text>
     </WarmCard>
   );
 }
@@ -158,7 +166,7 @@ function IconNav({ items, activeId, onSelect }) {
             style={({ pressed }) => [
               styles.iconNavItem,
               {
-                backgroundColor: active ? colors.surfaceLowest : "transparent",
+                backgroundColor: active ? colors.primary : "transparent",
                 opacity: pressed ? 0.72 : 1,
               },
             ]}
@@ -168,7 +176,7 @@ function IconNav({ items, activeId, onSelect }) {
               numberOfLines={1}
               style={[
                 styles.iconNavLabel,
-                { color: active ? colors.text : colors.textSecondary },
+                { color: active ? colors.buttonTextOnPrimary : colors.textSecondary },
               ]}
             >
               {item.label}
@@ -182,17 +190,20 @@ function IconNav({ items, activeId, onSelect }) {
 
 function ProofHint({ onPress, label = "Proof hidden · Tap to view transaction details" }) {
   const { colors } = useTheme();
+  const interactive = typeof onPress === "function";
 
   return (
     <Pressable
-      accessibilityRole="button"
+      accessibilityRole={interactive ? "button" : undefined}
+      accessibilityState={interactive ? undefined : { disabled: true }}
+      disabled={!interactive}
       onPress={onPress}
       style={({ pressed }) => [
         styles.proofHint,
         {
           backgroundColor: colors.proofBackground,
           borderColor: colors.success,
-          opacity: pressed ? 0.75 : 1,
+          opacity: interactive && pressed ? 0.75 : 1,
         },
       ]}
     >
