@@ -1,5 +1,7 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
 import {
   Alert,
   Modal,
@@ -13,14 +15,22 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import useNetworkStatus from "../hooks/useNetworkStatus";
 import {
+  appendOfflineDraft,
+  appendExpenseToLedger,
   appendLoan,
   appendToSyncedSalesLedger,
+  createExpensePayload,
   createSalesPayload,
   enqueuePendingSale,
+  getExpenseLedger,
+  getWalletConnection,
   getLoans,
+  getOfflineDrafts,
   getPendingSyncQueue,
   getReceipts,
   getSyncedSalesLedger,
+  isValidStellarPublicKey,
+  saveWalletConnection,
   syncPendingSalesQueue,
   updateLoanStatus,
 } from "../services/storageService";
@@ -35,10 +45,18 @@ import {
   GRAPH_RANGES,
   SAMPLE_BUSINESS_TRANSACTIONS,
   getBusinessSnapshot,
+  getExpenseTotal,
   getOfflineControlState,
   getSalesSeries,
   getSalesToday,
 } from "../services/dashboardService";
+import {
+  OFFLINE_DRAFT_TYPES,
+  createOfflineDraft,
+  getDraftsReadyForSubmission,
+  getOfflineCapabilities,
+  summarizeOfflineWork,
+} from "../services/offlineDraftService";
 import {
   receiveLoanFromLender,
   repayLoan,
@@ -71,9 +89,15 @@ const LENDER_OFFERS = [
 
 const OFFLINE_WARNING = "Naka-Offline Mode. I-save muna sa phone.";
 const DEMO_TRANSACTION_HASH = "0819554161045c5e2ef2a629dbd10396d504f76862739ceebf8452addf6c9489";
+const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
 
 const NAV_ITEMS = ["Profile", "Tracker", "Debt", "Receipts"];
-const BENTA_KEYPAD_KEYS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "backspace", "0", "done"];
+const EXPENSE_PAYMENT_SOURCES = [
+  { id: "cash", label: "Cash" },
+  { id: "gcash", label: "GCash" },
+  { id: "maya", label: "Maya" },
+  { id: "bank_transfer", label: "Bank transfer" },
+];
 
 const BUSINESS_DEBTS = [
   {
@@ -97,22 +121,30 @@ export default function KahaScreen() {
   const network = useNetworkStatus();
   const insets = useSafeAreaInsets(); // 4-E: safe area for offline banner
   const [bentaAmount, setBentaAmount] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseSource, setExpenseSource] = useState("cash");
+  const [expenses, setExpenses] = useState([]);
   const [pendingQueue, setPendingQueue] = useState([]);
   const [syncedLedger, setSyncedLedger] = useState([]);
   const [isSavingBenta, setIsSavingBenta] = useState(false); // 4-B: rage-click guard
   const [isLedgerReady, setIsLedgerReady] = useState(false);
+  const [isWalletReady, setIsWalletReady] = useState(false);
+  const [walletConnection, setWalletConnection] = useState(null);
   const [statusMessage, setStatusMessage] = useState("");
+  const [documentStatusMessage, setDocumentStatusMessage] = useState("");
   const [activeRange, setActiveRange] = useState("week");
   const [activeSection, setActiveSection] = useState("Profile");
-  const [isBentaKeypadVisible, setIsBentaKeypadVisible] = useState(false);
   const [receipts, setReceipts] = useState([]); // 4-D: live receipts
   const [loans, setLoans] = useState([]); // microloan records
+  const [offlineDrafts, setOfflineDrafts] = useState([]);
 
+  const displayLedger = network.isOffline ? [] : syncedLedger;
   const totalSyncedBenta = useMemo(
-    () => syncedLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0),
-    [syncedLedger],
+    () => displayLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0),
+    [displayLedger],
   );
-  const salesToday = useMemo(() => getSalesToday(syncedLedger), [syncedLedger]);
+  const salesToday = useMemo(() => getSalesToday(displayLedger), [displayLedger]);
+  const expenseTotal = useMemo(() => getExpenseTotal(expenses), [expenses]);
 
   // stage is now a CREDIT_STAGES string; metadata carries display properties
   const stage = evaluateCreditStage(totalSyncedBenta);
@@ -120,28 +152,44 @@ export default function KahaScreen() {
   const loanLimit = getLoanLimitForStage(stage);
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
   const graphSeries = useMemo(
-    () => getSalesSeries(syncedLedger, activeRange),
-    [activeRange, syncedLedger],
+    () => getSalesSeries(displayLedger, activeRange),
+    [activeRange, displayLedger],
   );
   // 4-D: pass live receipts; falls back to SAMPLE_BUSINESS_TRANSACTIONS when empty
   const businessSnapshot = useMemo(
-    () => getBusinessSnapshot(syncedLedger, receipts),
-    [syncedLedger, receipts],
+    () => getBusinessSnapshot(displayLedger, [...receipts, ...expenses]),
+    [displayLedger, receipts, expenses],
   );
   const controlState = getOfflineControlState(network.isOffline);
-  const isLoading = !network.hasCheckedInitialStatus || !isLedgerReady;
+  const offlineCapabilities = useMemo(
+    () => getOfflineCapabilities({ isOffline: network.isOffline }),
+    [network.isOffline],
+  );
+  const offlineWorkSummary = useMemo(
+    () => summarizeOfflineWork({ pendingBenta: pendingQueue, drafts: offlineDrafts }),
+    [pendingQueue, offlineDrafts],
+  );
+  const draftsReadyForSubmission = useMemo(
+    () => getDraftsReadyForSubmission(offlineDrafts, { isOffline: network.isOffline }),
+    [offlineDrafts, network.isOffline],
+  );
+  const isLoading = !network.hasCheckedInitialStatus || !isLedgerReady || !isWalletReady;
 
   const refreshLedger = useCallback(async () => {
-    const [queue, ledger, liveReceipts, liveLoans] = await Promise.all([
+    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords] = await Promise.all([
       getPendingSyncQueue(),
       getSyncedSalesLedger(),
       getReceipts(),
       getLoans(),
+      getOfflineDrafts(),
+      getExpenseLedger(),
     ]);
     setPendingQueue(queue);
     setSyncedLedger(ledger);
     setReceipts(liveReceipts);
     setLoans(liveLoans);
+    setOfflineDrafts(drafts);
+    setExpenses(expenseRecords);
     setIsLedgerReady(true);
   }, []);
 
@@ -153,6 +201,13 @@ export default function KahaScreen() {
       });
     }, [refreshLedger]),
   );
+
+  useEffect(() => {
+    getWalletConnection()
+      .then(setWalletConnection)
+      .catch(() => setWalletConnection(null))
+      .finally(() => setIsWalletReady(true));
+  }, []);
 
   useEffect(() => {
     if (!network.hasCheckedInitialStatus || network.isOffline) return;
@@ -196,7 +251,6 @@ export default function KahaScreen() {
       }
 
       setBentaAmount("");
-      setIsBentaKeypadVisible(false);
     } catch (error) {
       Alert.alert("Benta error", error.message);
     } finally {
@@ -204,15 +258,20 @@ export default function KahaScreen() {
     }
   }
 
-  function handleAddBentaDigit(key) {
-    setBentaAmount((value) => {
-      if (key === "backspace") return value.slice(0, -1);
-      if (key === "done") return value;
-      return `${value}${key}`;
-    });
+  async function handleAddExpense() {
+    setStatusMessage("");
 
-    if (key === "done") {
-      setIsBentaKeypadVisible(false);
+    try {
+      const payload = createExpensePayload({
+        amount: expenseAmount,
+        paymentSource: expenseSource,
+      });
+      const updatedExpenses = await appendExpenseToLedger(payload);
+      setExpenses(updatedExpenses);
+      setExpenseAmount("");
+      setStatusMessage("Na-save ang expense record.");
+    } catch (error) {
+      Alert.alert("Expense error", error.message);
     }
   }
 
@@ -224,12 +283,40 @@ export default function KahaScreen() {
     setStatusMessage(`${label} ready for Stellar Testnet flow.`);
   }
 
-  function handleCreateDocument() {
+  async function handleConnectWallet(publicKey) {
+    const connection = await saveWalletConnection({
+      walletName: "Freighter",
+      publicKey,
+    });
+    setWalletConnection(connection);
+  }
+
+  async function handleCreateDocument() {
+    setDocumentStatusMessage("");
+
+    if (receipts.length === 0 && loans.length === 0) {
+      setDocumentStatusMessage("No recorded transactions.");
+      return;
+    }
+
     try {
       const html = generateReceiptDocument(receipts, loans);
-      const blob = new Blob([html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      const fileUri = `${FileSystem.cacheDirectory}sarisync-ledger-${Date.now()}.html`;
+
+      await FileSystem.writeAsStringAsync(fileUri, html, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "text/html",
+          dialogTitle: "SariSync Ledger Document",
+          UTI: "public.html",
+        });
+        setDocumentStatusMessage("Document ready.");
+      } else {
+        Alert.alert("Document ready", fileUri);
+      }
     } catch (e) {
       Alert.alert("Document Error", e.message);
     }
@@ -241,6 +328,7 @@ export default function KahaScreen() {
       const result = await receiveLoanFromLender({
         lenderSecretKey: offer.secretKey,
         amountPhpc: offer.amountPhpc,
+        borrowerPublicKey: walletConnection?.publicKey,
       });
       if (!result.success) throw new Error(result.error);
 
@@ -271,6 +359,19 @@ export default function KahaScreen() {
 
   async function handleRepayLoan(loan) {
     try {
+      if (network.isOffline) {
+        const drafts = await appendOfflineDraft(createOfflineDraft({
+          type: OFFLINE_DRAFT_TYPES.LOAN_REPAYMENT,
+          amountPhpc: loan.amountPhpc,
+          destinationPublicKey: loan.lenderPublicKey,
+          lenderName: loan.lenderName,
+          loanId: loan.id,
+        }));
+        setOfflineDrafts(drafts);
+        setStatusMessage("Saved repayment draft. Submit when online.");
+        return;
+      }
+
       setStatusMessage("Nagbabayad sa " + loan.lenderName + "...");
       const result = await repayLoan({
         lenderPublicKey: loan.lenderPublicKey,
@@ -291,8 +392,28 @@ export default function KahaScreen() {
     }
   }
 
+  function handleSubmitOfflineWork() {
+    if (network.isOffline) {
+      setStatusMessage(offlineCapabilities.message);
+      return;
+    }
+
+    if (draftsReadyForSubmission.length === 0 && pendingQueue.length === 0) {
+      setStatusMessage("No offline work waiting for submission.");
+      return;
+    }
+
+    setStatusMessage(
+      `Ready to submit ${draftsReadyForSubmission.length} offline Stellar draft(s). Review each draft before broadcasting.`,
+    );
+  }
+
   if (isLoading) {
     return <LoadingScreen />;
+  }
+
+  if (!walletConnection) {
+    return <WalletConnectionGate onConnect={handleConnectWallet} />;
   }
 
   return (
@@ -309,14 +430,18 @@ export default function KahaScreen() {
         <Text style={styles.title}>Kaha</Text>
         <Text style={styles.subtitle}>
           {network.isOffline
-            ? "Read-only synced data, local Benta saving, and locked online transactions."
+            ? "Offline Mode. Online ledger hidden until internet returns. Local entries still save on this phone."
             : "Online dashboard for store sales, capital, business debt, and receipts."}
+        </Text>
+        <Text style={styles.walletPill}>
+          Freighter connected · {walletConnection.publicKey.slice(0, 8)}...{walletConnection.publicKey.slice(-6)}
         </Text>
       </View>
 
       <View style={styles.metricsGrid}>
         <MetricCard label="Sales today" value={formatPhp(salesToday)} color="#34C759" />
         <MetricCard label="Benta" value={formatPhp(totalSyncedBenta)} color="#34C759" />
+        <MetricCard label="Expenses" value={formatPhp(expenseTotal)} color="#FF9500" />
         <MetricCard label="Tiwala Score" value={String(tiwalaScore)} />
         <MetricCard label="Loan Limit" value={formatPhp(loanLimit)} />
       </View>
@@ -360,15 +485,10 @@ export default function KahaScreen() {
           value={bentaAmount}
           onChangeText={setBentaAmount}
           keyboardType="number-pad"
-          showSoftInputOnFocus={false}
-          onFocus={() => setIsBentaKeypadVisible(true)}
           placeholder="Hal. 2500"
           placeholderTextColor="#918A7F"
           style={styles.input}
         />
-        {isBentaKeypadVisible ? (
-          <MobileNumberPad onPressKey={handleAddBentaDigit} />
-        ) : null}
         <Pressable
           accessibilityRole="button"
           disabled={isSavingBenta}
@@ -385,6 +505,63 @@ export default function KahaScreen() {
         </Pressable>
         {statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
       </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Log expense</Text>
+        <TextInput
+          value={expenseAmount}
+          onChangeText={setExpenseAmount}
+          keyboardType="number-pad"
+          placeholder="Hal. 1200"
+          placeholderTextColor="#918A7F"
+          style={styles.input}
+        />
+        <Text style={styles.cardLabel}>Expense source</Text>
+        <View style={styles.rangeRow}>
+          {EXPENSE_PAYMENT_SOURCES.map((source) => (
+            <Pressable
+              key={source.id}
+              accessibilityRole="button"
+              onPress={() => setExpenseSource(source.id)}
+              style={[
+                styles.rangeButton,
+                expenseSource === source.id && styles.rangeButtonActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.rangeButtonText,
+                  expenseSource === source.id && styles.rangeButtonTextActive,
+                ]}
+              >
+                {source.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <Pressable onPress={handleAddExpense} style={styles.secondaryButton}>
+          <Text style={styles.secondaryButtonText}>I-save ang Expense</Text>
+        </Pressable>
+        {expenses.length > 0 ? (
+          <View style={styles.expenseList}>
+            {expenses.slice(0, 3).map((expense) => (
+              <InfoRow
+                key={expense.id}
+                label={expenseSourceLabel(expense.paymentSource)}
+                value={formatPhp(expense.amount)}
+              />
+            ))}
+          </View>
+        ) : null}
+      </View>
+
+      <OfflineWorkPanel
+        summary={offlineWorkSummary}
+        capabilities={offlineCapabilities}
+        draftsReadyForSubmission={draftsReadyForSubmission}
+        isOffline={network.isOffline}
+        onSubmit={handleSubmitOfflineWork}
+      />
 
       <View style={styles.navGrid}>
         {NAV_ITEMS.map((item) => (
@@ -435,6 +612,7 @@ export default function KahaScreen() {
           loans={loans}
           controlState={controlState}
           onCreateDocument={handleCreateDocument}
+          documentStatusMessage={documentStatusMessage}
         />
       ) : null}
     </ScrollView>
@@ -451,36 +629,75 @@ function LoadingScreen() {
   );
 }
 
-function MobileNumberPad({ onPressKey }) {
-  return (
-    <View style={styles.numberPad} accessibilityLabel="Benta on-screen number pad">
-      {BENTA_KEYPAD_KEYS.map((key) => {
-        const label = key === "backspace" ? "Back" : key === "done" ? "Done" : key;
+function WalletConnectionGate({ onConnect }) {
+  const [publicKey, setPublicKey] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
 
-        return (
-          <Pressable
-            key={key}
-            accessibilityRole="button"
-            accessibilityLabel={key === "backspace" ? "Delete last digit" : label}
-            onPress={() => onPressKey(key)}
-            style={({ pressed }) => [
-              styles.numberPadKey,
-              key === "done" && styles.numberPadDone,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text
-              style={[
-                styles.numberPadKeyText,
-                key === "done" && styles.numberPadDoneText,
-              ]}
-            >
-              {label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+  async function connect(publicKeyToConnect = publicKey) {
+    setErrorMessage("");
+
+    if (!isValidStellarPublicKey(publicKeyToConnect)) {
+      setErrorMessage("Connect a valid Stellar Testnet public account.");
+      return;
+    }
+
+    setIsConnecting(true);
+    try {
+      await onConnect(publicKeyToConnect);
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsConnecting(false);
+    }
+  }
+
+  return (
+    <ScrollView contentContainerStyle={[styles.screen, styles.walletGateScreen]}>
+      <View style={styles.hero}>
+        <Text style={styles.eyebrow}>SariSync Ledger</Text>
+        <Text style={styles.title}>Connect Wallet</Text>
+        <Text style={styles.subtitle}>
+          Connect your Stellar Testnet account through Freighter before using Kaha.
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Stellar + Freighter</Text>
+        <Text style={styles.stageName}>Store owner account</Text>
+        <TextInput
+          value={publicKey}
+          onChangeText={setPublicKey}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          placeholder="Paste Stellar G... public key"
+          placeholderTextColor="#918A7F"
+          style={[styles.input, styles.walletInput]}
+        />
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => connect(publicKey)}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            pressed && styles.pressed,
+            isConnecting && styles.disabled,
+          ]}
+          disabled={isConnecting}
+        >
+          <Text style={styles.primaryButtonText}>
+            {isConnecting ? "Connecting..." : "Connect Freighter Wallet"}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => connect(DEMO_WALLET_PUBLIC_KEY)}
+          style={styles.secondaryButton}
+        >
+          <Text style={styles.secondaryButtonText}>Use Demo Freighter Account</Text>
+        </Pressable>
+        {errorMessage ? <Text style={styles.statusText}>{errorMessage}</Text> : null}
+      </View>
+    </ScrollView>
   );
 }
 
@@ -510,6 +727,38 @@ function SalesGraph({ series }) {
           </View>
         );
       })}
+    </View>
+  );
+}
+
+function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isOffline, onSubmit }) {
+  const submitDisabled = isOffline || summary.totalPendingCount === 0;
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.rowBetween}>
+        <View>
+          <Text style={styles.cardLabel}>Offline Work</Text>
+          <Text style={styles.stageName}>Local drafts</Text>
+        </View>
+        <Text style={styles.lockText}>{summary.totalPendingCount} pending</Text>
+      </View>
+      <Text style={styles.bodyText}>{capabilities.message}</Text>
+      <View style={styles.metricsGrid}>
+        <MiniMetric label="Pending Benta records" value={String(summary.pendingBentaCount)} color="#34C759" />
+        <MiniMetric label="Draft supplier invoices" value={String(summary.supplierInvoiceDraftCount)} color="#007AFF" />
+        <MiniMetric label="Draft loan repayments" value={String(summary.repaymentDraftCount)} color="#FF9500" />
+      </View>
+      <Text style={[styles.bodyText, { fontSize: 12 }]}>
+        Draft status: pending_online_submission · Ready online: {draftsReadyForSubmission.length}
+      </Text>
+      <Pressable
+        disabled={submitDisabled}
+        onPress={onSubmit}
+        style={[styles.secondaryButton, submitDisabled && styles.disabledButton]}
+      >
+        <Text style={styles.secondaryButtonText}>Submit when online</Text>
+      </Pressable>
     </View>
   );
 }
@@ -678,11 +927,11 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
             <View style={styles.alignRight}>
               <Text style={styles.debtAmount}>{formatPhp(loan.amountPhpDisplay)}</Text>
               <Pressable
-                disabled={isRepaying || !controlState.canTransact}
+                disabled={isRepaying}
                 onPress={() => setConfirmLoan(loan)}
-            style={[styles.bayadButton, (isRepaying || !controlState.canTransact) ? styles.disabled : null]}
+                style={[styles.bayadButton, isRepaying ? styles.disabled : null]}
               >
-                <Text style={styles.bayadButtonText}>Bayad</Text>
+                <Text style={styles.bayadButtonText}>{controlState.canTransact ? "Bayad" : "Draft"}</Text>
               </Pressable>
             </View>
           </View>
@@ -758,13 +1007,17 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
                 <Text style={styles.bodyText}>Magbabayad sa: <Text style={{ fontWeight: "700" }}>{confirmLoan.lenderName}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 4 }]}>Halaga: <Text style={{ fontWeight: "700", color: "#FF3B30" }}>{formatPhp(confirmLoan.amountPhpDisplay)}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 8, fontSize: 12, color: "#6E766F" }]}>
-                  Ito ay isang Stellar Testnet transaction na mag-sesend ng PHPC mula sa iyong store wallet.
+                  {controlState.canTransact
+                    ? "Ito ay isang Stellar Testnet transaction na mag-sesend ng PHPC mula sa iyong store wallet."
+                    : "Offline ngayon. Ise-save muna ito bilang repayment draft at hindi pa ibo-broadcast sa Stellar."}
                 </Text>
               </>
             )}
             <View style={{ flexDirection: "row", marginTop: 16 }}>
               <Pressable style={[styles.primaryButton, { flex: 1, marginRight: 8, backgroundColor: "#FF3B30" }]} onPress={() => handleRepay(confirmLoan)}>
-                <Text style={styles.primaryButtonText}>{isRepaying ? "Nagbabayad..." : "Bayaran"}</Text>
+                <Text style={styles.primaryButtonText}>
+                  {isRepaying ? "Nagbabayad..." : controlState.canTransact ? "Bayaran" : "Save Draft"}
+                </Text>
               </Pressable>
               <Pressable style={[styles.secondaryButton, { flex: 1, marginTop: 0 }]} onPress={() => setConfirmLoan(null)}>
                 <Text style={styles.secondaryButtonText}>Kanselahin</Text>
@@ -777,7 +1030,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
   );
 }
 
-function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument }) {
+function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, documentStatusMessage }) {
   const totalUsdc = receipts.reduce((s, r) => s + Number(r.amountUsdc || 0), 0);
   const totalLoaned = loans.reduce((s, l) => s + Number(l.amountPhpDisplay || 0), 0);
 
@@ -793,11 +1046,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument }) {
         <MiniMetric label="Loaned" value={formatPhp(totalLoaned)} color="#007AFF" />
       </View>
 
-      {receipts.length === 0 && loans.length === 0 ? (
-        <Text style={[styles.bodyText, { marginTop: 8 }]}>
-          Wala pang na-record na transaksyon. Mag-settle ng supplier invoice o humingi ng loan para lumabas dito.
-        </Text>
-      ) : (
+      {receipts.length > 0 || loans.length > 0 ? (
         <>
           {receipts.length > 0 && (
             <>
@@ -833,7 +1082,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument }) {
             </>
           )}
         </>
-      )}
+      ) : null}
 
       <Pressable
         onPress={onCreateDocument}
@@ -841,9 +1090,11 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument }) {
       >
         <Text style={styles.primaryButtonText}>📄 Create Document</Text>
       </Pressable>
-      <Text style={[styles.bodyText, { fontSize: 11, color: "#6E766F", textAlign: "center" }]}>
-        Bubuksan sa bagong tab bilang HTML na maaaring i-print bilang PDF.
-      </Text>
+      {documentStatusMessage ? (
+        <Text style={[styles.bodyText, { fontSize: 12, color: "#6E766F", textAlign: "center" }]}>
+          {documentStatusMessage}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -894,6 +1145,11 @@ function rangeLabel(range) {
   return labels[range] || range;
 }
 
+function expenseSourceLabel(sourceId) {
+  const source = EXPENSE_PAYMENT_SOURCES.find((item) => item.id === sourceId);
+  return source?.label || sourceId;
+}
+
 const styles = StyleSheet.create({
   loadingScreen: {
     flex: 1,
@@ -926,6 +1182,10 @@ const styles = StyleSheet.create({
     paddingBottom: 48,
     gap: 16,
   },
+  walletGateScreen: {
+    flexGrow: 1,
+    justifyContent: "center",
+  },
   hero: {
     paddingTop: 10,
     gap: 6,
@@ -946,6 +1206,19 @@ const styles = StyleSheet.create({
     color: "#5D675F",
     fontSize: 16,
     lineHeight: 23,
+  },
+  walletPill: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    borderRadius: 8,
+    borderColor: "#D4CEC1",
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    color: "#17231D",
+    fontSize: 12,
+    fontWeight: "800",
+    backgroundColor: "#FFFFFF",
   },
   offlineBanner: {
     backgroundColor: "#FFF0EF",
@@ -1016,6 +1289,9 @@ const styles = StyleSheet.create({
     padding: 16,
     gap: 12,
   },
+  expenseList: {
+    gap: 10,
+  },
   cardLabel: {
     color: "#6E766F",
     fontSize: 13,
@@ -1040,32 +1316,9 @@ const styles = StyleSheet.create({
     color: "#17231D",
     backgroundColor: "#FFFEFB",
   },
-  numberPad: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-  },
-  numberPadKey: {
-    width: "31.5%",
-    minHeight: 48,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-    borderColor: "#D4CEC1",
-    borderWidth: 1,
-    backgroundColor: "#FDFBF6",
-  },
-  numberPadDone: {
-    backgroundColor: "#17231D",
-    borderColor: "#17231D",
-  },
-  numberPadKeyText: {
-    color: "#17231D",
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  numberPadDoneText: {
-    color: "#FFFFFF",
+  walletInput: {
+    fontSize: 13,
+    fontWeight: "700",
   },
   primaryButton: {
     minHeight: 50,

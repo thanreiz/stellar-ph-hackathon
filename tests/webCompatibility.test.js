@@ -22,6 +22,16 @@ describe("web compatibility", () => {
     assert.match(source, /20s/);
   });
 
+  it("rebuilds Stellar transactions when Horizon returns tx_too_late", () => {
+    const source = readFileSync(new URL("../services/stellarService.js", import.meta.url), "utf8");
+
+    assert.match(source, /HORIZON_TRANSACTION_MAX_TIME_SECONDS\s*=\s*300/);
+    assert.match(source, /MAX_SUBMISSION_ATTEMPTS\s*=\s*2/);
+    assert.match(source, /function isTxTooLate/);
+    assert.match(source, /submitWithFreshTransaction/);
+    assert.match(source, /tx_too_late/);
+  });
+
   it("shows transaction hashes after successful Stellar loan and repayment flows", () => {
     const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
 

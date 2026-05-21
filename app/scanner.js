@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import useNetworkStatus from "../hooks/useNetworkStatus";
 import {
   CREDIT_STAGES,
   calculateTiwalaScore,
@@ -22,9 +23,14 @@ import {
   parseSupplierInvoiceQr,
 } from "../services/invoiceService";
 import {
+  appendOfflineDraft,
   appendReceipt,
   getTotalSyncedSalesVolume,
 } from "../services/storageService";
+import {
+  OFFLINE_DRAFT_TYPES,
+  createOfflineDraft,
+} from "../services/offlineDraftService";
 import { submitInventoryFinancingSettlement } from "../services/stellarService";
 import { formatPhp, formatPublicKey, formatUsdc } from "../utils/formatters";
 
@@ -32,6 +38,7 @@ const SETTLED_COLOR = "#34C759";
 const SHORTAGE_COLOR = "#FF3B30";
 
 export default function ScannerScreen() {
+  const network = useNetworkStatus();
   const [permission, requestPermission] = useCameraPermissions();
   const [totalSyncedBenta, setTotalSyncedBenta] = useState(0);
   const [invoice, setInvoice] = useState(null);
@@ -39,6 +46,7 @@ export default function ScannerScreen() {
   const [scanned, setScanned] = useState(false);
   const [isSettling, setIsSettling] = useState(false); // 4-B: rage-click guard (already existed)
   const [settlementResult, setSettlementResult] = useState(null);
+  const [draftMessage, setDraftMessage] = useState("");
   const [showQrError, setShowQrError] = useState(false); // 4-C: QR error modal state
   const [mockQrPayload, setMockQrPayload] = useState("");
 
@@ -64,6 +72,7 @@ export default function ScannerScreen() {
 
     setScanned(true);
     setSettlementResult(null);
+    setDraftMessage("");
 
     try {
       const parsedInvoice = parseSupplierInvoiceQr(event.data);
@@ -84,8 +93,21 @@ export default function ScannerScreen() {
 
     setIsSettling(true);
     setSettlementResult(null);
+    setDraftMessage("");
 
     try {
+      if (network.isOffline) {
+        await appendOfflineDraft(createOfflineDraft({
+          type: OFFLINE_DRAFT_TYPES.SUPPLIER_INVOICE,
+          amountUsdc: invoice.amount_usdc,
+          amountPhpc: loanLimit,
+          destinationPublicKey: invoice.supplier_pubkey,
+          supplierPubkey: invoice.supplier_pubkey,
+        }));
+        setDraftMessage("Saved supplier invoice draft. Submit when online.");
+        return;
+      }
+
       const result = await submitInventoryFinancingSettlement({
         supplierPubkey: invoice.supplier_pubkey,
         amountUsdc: invoice.amount_usdc.toFixed(7),
@@ -142,7 +164,9 @@ export default function ScannerScreen() {
         <Text style={styles.eyebrow}>B2B supplier invoice</Text>
         <Text style={styles.title}>Scanner</Text>
         <Text style={styles.subtitle}>
-          Scan QR, review inventory financing eligibility, then settle on Stellar Testnet.
+          {network.isOffline
+            ? "Scan QR and save a local supplier invoice draft until Wi-Fi returns."
+            : "Scan QR, review inventory financing eligibility, then settle on Stellar Testnet."}
         </Text>
       </View>
 
@@ -202,6 +226,7 @@ export default function ScannerScreen() {
               setInvoice(parsedInvoice);
               setScanError("");
               setScanned(true);
+              setDraftMessage("");
             } catch (error) {
               setScanError(error.message);
             }
@@ -254,9 +279,17 @@ export default function ScannerScreen() {
             ]}
           >
             <Text style={styles.primaryButtonText}>
-              {isSettling ? "Sine-settle..." : stageMeta.actionLabel}
+              {isSettling ? "Sine-save..." : network.isOffline ? "Save offline draft" : stageMeta.actionLabel}
             </Text>
           </Pressable>
+        </View>
+      ) : null}
+
+      {draftMessage ? (
+        <View style={styles.resultCard}>
+          <Text style={styles.resultTitle}>Offline draft saved</Text>
+          <Text style={styles.bodyText}>{draftMessage}</Text>
+          <Text style={styles.txQrLabel}>Status: pending_online_submission</Text>
         </View>
       ) : null}
 

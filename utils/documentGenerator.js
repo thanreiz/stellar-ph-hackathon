@@ -1,6 +1,6 @@
 /**
  * Generates a styled HTML receipt document from the given receipts and loans.
- * On web, open it with: window.open(URL.createObjectURL(new Blob([html], {type:'text/html'})))
+ * Mobile callers write this HTML to a local file, then pass it to the native share sheet.
  */
 export function generateReceiptDocument(receipts = [], loans = []) {
   const now = new Date().toLocaleString('en-PH', {

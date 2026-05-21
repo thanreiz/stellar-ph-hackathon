@@ -22,6 +22,8 @@ if (!_SECRET_KEY || !_PUBLIC_KEY) {
 
 // Task 2-C — demo-safe Horizon submission timeout (module-scope, reusable)
 const HORIZON_TIMEOUT_MS = 20000;
+const HORIZON_TRANSACTION_MAX_TIME_SECONDS = 300;
+const MAX_SUBMISSION_ATTEMPTS = 2;
 
 function horizonTimeout() {
   return new Promise((_, reject) =>
@@ -81,6 +83,36 @@ function extractHorizonError(error) {
   return detail || error.message || "Stellar settlement failed.";
 }
 
+function isTxTooLate(error) {
+  const resultCodes = error?.response?.data?.extras?.result_codes;
+  return (
+    resultCodes?.transaction === "tx_too_late" ||
+    extractHorizonError(error).includes("tx_too_late")
+  );
+}
+
+async function submitWithFreshTransaction(server, buildTransaction) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= MAX_SUBMISSION_ATTEMPTS; attempt += 1) {
+    const transaction = await buildTransaction();
+
+    try {
+      return await Promise.race([
+        server.submitTransaction(transaction),
+        horizonTimeout(),
+      ]);
+    } catch (error) {
+      lastError = error;
+      if (!isTxTooLate(error) || attempt === MAX_SUBMISSION_ATTEMPTS) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 export async function submitInventoryFinancingSettlement({
   supplierPubkey,
   amountUsdc,
@@ -107,55 +139,50 @@ export async function submitInventoryFinancingSettlement({
 
     // Task 2-D — single Horizon client via walletSdkService singleton
     const server = getHorizonServer();
-    const sourceAccount = await server.loadAccount(keypair.publicKey());
-
-    // Task 2-A — PHPC trustline check before building the transaction
-    const phpcIssuer = process.env.EXPO_PUBLIC_PHPC_ISSUER;
-    const hasTrustline = sourceAccount.balances.some(
-      b => b.asset_type !== 'native'
-        && b.asset_code === 'PHPC'
-        && b.asset_issuer === phpcIssuer
-    );
-
-    if (!hasTrustline) {
-      return {
-        success: false,
-        error:
-          'Store wallet has no PHPC trustline. ' +
-          'Fund the Testnet account and add a PHPC trustline at laboratory.stellar.org before transacting.',
-      };
-    }
-
     const phpcAsset = new Asset("PHPC", config.phpcIssuer);
     const usdcAsset = new Asset("USDC", config.usdcIssuer);
     const destinationAmount = normalizeAmount(amountUsdc);
     const sendMax = normalizeAmount(sendMaxPhpc);
 
-    const transaction = new TransactionBuilder(sourceAccount, {
-      fee: BASE_FEE,
-      networkPassphrase: Networks.TESTNET,
-    })
-      .addOperation(
-        Operation.pathPaymentStrictReceive({
-          sendAsset: phpcAsset,
-          sendMax,
-          destination: supplierPubkey,
-          destAsset: usdcAsset,
-          destAmount: destinationAmount,
-          path: [],
-        }),
-      )
-      .addMemo(Memo.text("SariSync B2B"))
-      .setTimeout(60)
-      .build();
+    const response = await submitWithFreshTransaction(server, async () => {
+      const sourceAccount = await server.loadAccount(keypair.publicKey());
 
-    transaction.sign(keypair);
+      // Task 2-A — PHPC trustline check before building the transaction
+      const phpcIssuer = process.env.EXPO_PUBLIC_PHPC_ISSUER;
+      const hasTrustline = sourceAccount.balances.some(
+        b => b.asset_type !== 'native'
+          && b.asset_code === 'PHPC'
+          && b.asset_issuer === phpcIssuer
+      );
 
-    // Task 2-C — enforce Horizon submission timeout
-    const response = await Promise.race([
-      server.submitTransaction(transaction),
-      horizonTimeout(),
-    ]);
+      if (!hasTrustline) {
+        throw new Error(
+          'Store wallet has no PHPC trustline. ' +
+          'Fund the Testnet account and add a PHPC trustline at laboratory.stellar.org before transacting.',
+        );
+      }
+
+      const transaction = new TransactionBuilder(sourceAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: Networks.TESTNET,
+      })
+        .addOperation(
+          Operation.pathPaymentStrictReceive({
+            sendAsset: phpcAsset,
+            sendMax,
+            destination: supplierPubkey,
+            destAsset: usdcAsset,
+            destAmount: destinationAmount,
+            path: [],
+          }),
+        )
+        .addMemo(Memo.text("SariSync B2B"))
+        .setTimeout(HORIZON_TRANSACTION_MAX_TIME_SECONDS)
+        .build();
+
+      transaction.sign(keypair);
+      return transaction;
+    });
 
     return {
       success: true,
@@ -173,36 +200,41 @@ export async function submitInventoryFinancingSettlement({
  * Receive a PHPC loan from a microlending company.
  * The lender's keypair signs a payment to the store's public key.
  */
-export async function receiveLoanFromLender({ lenderSecretKey, amountPhpc }) {
+export async function receiveLoanFromLender({ lenderSecretKey, amountPhpc, borrowerPublicKey }) {
   try {
     const config = getStellarConfig();
+    validateConfig(config);
+
+    const destinationPublicKey = borrowerPublicKey || config.storePublicKey;
+    if (typeof destinationPublicKey !== "string" || !destinationPublicKey.startsWith("G")) {
+      throw new Error("Connect a valid Stellar borrower account first.");
+    }
+
     const server = getHorizonServer();
 
     const lenderKeypair = Keypair.fromSecret(lenderSecretKey);
-    const lenderAccount = await server.loadAccount(lenderKeypair.publicKey());
     const phpcAsset = new Asset('PHPC', config.phpcIssuer);
 
-    const transaction = new TransactionBuilder(lenderAccount, {
-      fee: BASE_FEE,
-      networkPassphrase: Networks.TESTNET,
-    })
-      .addOperation(
-        Operation.payment({
-          destination: config.storePublicKey,
-          asset: phpcAsset,
-          amount: normalizeAmount(amountPhpc),
-        })
-      )
-      .addMemo(Memo.text('SariSync Loan'))
-      .setTimeout(60)
-      .build();
+    const response = await submitWithFreshTransaction(server, async () => {
+      const lenderAccount = await server.loadAccount(lenderKeypair.publicKey());
+      const transaction = new TransactionBuilder(lenderAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: Networks.TESTNET,
+      })
+        .addOperation(
+          Operation.payment({
+            destination: destinationPublicKey,
+            asset: phpcAsset,
+            amount: normalizeAmount(amountPhpc),
+          })
+        )
+        .addMemo(Memo.text('SariSync Loan'))
+        .setTimeout(HORIZON_TRANSACTION_MAX_TIME_SECONDS)
+        .build();
 
-    transaction.sign(lenderKeypair);
-
-    const response = await Promise.race([
-      server.submitTransaction(transaction),
-      horizonTimeout(),
-    ]);
+      transaction.sign(lenderKeypair);
+      return transaction;
+    });
 
     return { success: true, transactionHash: response.hash };
   } catch (error) {
@@ -221,30 +253,28 @@ export async function repayLoan({ lenderPublicKey, amountPhpc, memo = 'SariSync 
 
     const server = getHorizonServer();
     const storeKeypair = Keypair.fromSecret(config.storeSecretKey);
-    const storeAccount = await server.loadAccount(config.storePublicKey);
     const phpcAsset = new Asset('PHPC', config.phpcIssuer);
 
-    const transaction = new TransactionBuilder(storeAccount, {
-      fee: BASE_FEE,
-      networkPassphrase: Networks.TESTNET,
-    })
-      .addOperation(
-        Operation.payment({
-          destination: lenderPublicKey,
-          asset: phpcAsset,
-          amount: normalizeAmount(amountPhpc),
-        })
-      )
-      .addMemo(Memo.text(memo.slice(0, 28)))
-      .setTimeout(60)
-      .build();
+    const response = await submitWithFreshTransaction(server, async () => {
+      const storeAccount = await server.loadAccount(config.storePublicKey);
+      const transaction = new TransactionBuilder(storeAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: Networks.TESTNET,
+      })
+        .addOperation(
+          Operation.payment({
+            destination: lenderPublicKey,
+            asset: phpcAsset,
+            amount: normalizeAmount(amountPhpc),
+          })
+        )
+        .addMemo(Memo.text(memo.slice(0, 28)))
+        .setTimeout(HORIZON_TRANSACTION_MAX_TIME_SECONDS)
+        .build();
 
-    transaction.sign(storeKeypair);
-
-    const response = await Promise.race([
-      server.submitTransaction(transaction),
-      horizonTimeout(),
-    ]);
+      transaction.sign(storeKeypair);
+      return transaction;
+    });
 
     return { success: true, transactionHash: response.hash };
   } catch (error) {

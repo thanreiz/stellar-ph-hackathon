@@ -27,11 +27,76 @@ describe("mobile demo configuration", () => {
     assert.match(seedScript, /SariSync seed/);
   });
 
-  it("uses an in-app number pad for phone demo Benta entry", () => {
+  it("allows the native phone keyboard for Benta entry", () => {
     const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
 
-    assert.match(source, /BENTA_KEYPAD_KEYS/);
-    assert.match(source, /showSoftInputOnFocus=\{false\}/);
-    assert.match(source, /function MobileNumberPad/);
+    assert.match(source, /keyboardType="number-pad"/);
+    assert.doesNotMatch(source, /showSoftInputOnFocus=\{false\}/);
+  });
+
+  it("requires a Stellar Freighter wallet connection before showing the ledger", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+
+    assert.match(source, /WalletConnectionGate/);
+    assert.match(source, /Freighter/);
+    assert.match(source, /getWalletConnection/);
+    assert.match(source, /saveWalletConnection/);
+  });
+
+  it("uses native document sharing instead of browser blob APIs on mobile", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+
+    assert.match(source, /FileSystem\.writeAsStringAsync/);
+    assert.match(source, /Sharing\.shareAsync/);
+    assert.doesNotMatch(source, /createObjectURL|window\.open|new Blob/);
+  });
+
+  it("only shows the empty transaction message after Create Document is pressed", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+
+    assert.match(source, /No recorded transactions\./);
+    assert.match(source, /documentStatusMessage/);
+    assert.doesNotMatch(
+      source,
+      /Wala pang na-record na transaksyon\. Mag-settle ng supplier invoice o humingi ng loan para lumabas dito/,
+    );
+    assert.doesNotMatch(
+      source,
+      /Bubuksan sa bagong tab bilang HTML na maaaring i-print bilang PDF/,
+    );
+  });
+
+  it("shows offline drafts separately from submitted Stellar transactions", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+    const scanner = readFileSync(new URL("../app/scanner.js", import.meta.url), "utf8");
+
+    assert.match(source, /Offline Work/);
+    assert.match(source, /pending_online_submission/);
+    assert.match(source, /Submit when online/);
+    assert.match(source, /Draft supplier invoices/);
+    assert.match(source, /Draft loan repayments/);
+    assert.match(scanner, /appendOfflineDraft/);
+  });
+
+  it("tracks expenses with cash and digital bank payment sources", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+    const storage = readFileSync(new URL("../services/storageService.js", import.meta.url), "utf8");
+
+    assert.match(source, /Log expense/);
+    assert.match(source, /Expense source/);
+    assert.match(source, /Cash/);
+    assert.match(source, /GCash/);
+    assert.match(source, /Maya/);
+    assert.match(source, /Bank transfer/);
+    assert.match(storage, /createExpensePayload/);
+    assert.match(storage, /getExpenseLedger/);
+  });
+
+  it("hides online ledger numbers while offline", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+
+    assert.match(source, /displayLedger/);
+    assert.match(source, /network\.isOffline \? \[\] : syncedLedger/);
+    assert.match(source, /Online ledger hidden until internet returns/);
   });
 });

@@ -65,6 +65,10 @@ function sumRecords(records) {
   return records.reduce((sum, record) => sum + Number(record.amount || 0), 0);
 }
 
+export function getExpenseTotal(expenseRecords = []) {
+  return sumRecords(expenseRecords);
+}
+
 // ── Exported functions ────────────────────────────────────────────────────────
 
 /**
@@ -93,7 +97,7 @@ export function getSalesSeries(records, range, now = new Date()) {
 export function getOfflineControlState(isOffline) {
   return {
     canTransact: !isOffline,
-    canCreateDocument: !isOffline,
+    canCreateDocument: true,
     reason: isOffline ? "Needs internet to transact." : "",
   };
 }

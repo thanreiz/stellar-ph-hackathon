@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  getExpenseTotal,
   getBusinessSnapshot,
   getOfflineControlState,
   getSalesSeries,
@@ -52,10 +53,10 @@ describe("dashboard sales summaries", () => {
 });
 
 describe("business controls", () => {
-  it("disables blockchain and document actions while offline", () => {
+  it("disables blockchain actions while keeping local documents available offline", () => {
     assert.deepEqual(getOfflineControlState(true), {
       canTransact: false,
-      canCreateDocument: false,
+      canCreateDocument: true,
       reason: "Needs internet to transact.",
     });
   });
@@ -79,5 +80,13 @@ describe("business controls", () => {
     assert.equal(snapshot.spent, 3350);
     assert.equal(snapshot.capital, 3500);
     assert.equal(snapshot.businessDebt, 1800);
+  });
+
+  it("sums expenses across cash and digital bank payment sources", () => {
+    assert.equal(getExpenseTotal([
+      { amount: 120, paymentSource: "cash" },
+      { amount: 340, paymentSource: "gcash" },
+      { amount: 60, paymentSource: "maya" },
+    ]), 520);
   });
 });

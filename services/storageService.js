@@ -7,6 +7,9 @@ export const STORAGE_KEYS = {
   LAST_STAGE:          'sarisync:lastStage',              // BR5 — track last credit stage
   RECEIPTS:            'sarisync:receipts',               // live receipt log
   LOANS:               'sarisync:loans',                  // microloan records
+  WALLET_CONNECTION:   'sarisync:walletConnection',       // connected Stellar/Freighter account
+  OFFLINE_DRAFTS:      'sarisync:offlineDrafts',          // invoice and repayment drafts
+  EXPENSE_LEDGER:      'sarisync:expenseLedger',          // cash and digital bank expenses
 };
 
 function safeJsonParse(value, fallback) {
@@ -39,6 +42,30 @@ export function createSalesPayload(amount) {
     createdAt: new Date().toISOString(),
     timestamp: Date.now(),
     syncedAt: null,
+  };
+}
+
+export function createExpensePayload({ amount, paymentSource, category = 'Inventory', note = '' }) {
+  const parsedAmount = Number(amount);
+
+  if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+    throw new Error('Expense amount must be a positive number.');
+  }
+
+  if (!paymentSource) {
+    throw new Error('Expense payment source is required.');
+  }
+
+  return {
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+    kind: 'expense',
+    amount: Math.round(parsedAmount),
+    currency: 'PHP',
+    paymentSource,
+    category,
+    note,
+    createdAt: new Date().toISOString(),
+    timestamp: Date.now(),
   };
 }
 
@@ -137,7 +164,51 @@ export async function resetLocalLedgerStorage() {
     STORAGE_KEYS.OUTSTANDING_BALANCE,
     STORAGE_KEYS.LAST_STAGE,
     STORAGE_KEYS.RECEIPTS,
+    STORAGE_KEYS.WALLET_CONNECTION,
+    STORAGE_KEYS.OFFLINE_DRAFTS,
+    STORAGE_KEYS.EXPENSE_LEDGER,
   ]);
+}
+
+// ── Wallet connection ────────────────────────────────────────────────────────
+
+export function isValidStellarPublicKey(publicKey) {
+  return typeof publicKey === 'string' && /^G[A-Z2-7]{55}$/.test(publicKey.trim());
+}
+
+export async function getWalletConnection() {
+  const rawConnection = await AsyncStorage.getItem(STORAGE_KEYS.WALLET_CONNECTION);
+  const connection = safeJsonParse(rawConnection, null);
+
+  if (!connection || !isValidStellarPublicKey(connection.publicKey)) {
+    return null;
+  }
+
+  return connection;
+}
+
+export async function saveWalletConnection(connection) {
+  if (!isValidStellarPublicKey(connection?.publicKey)) {
+    throw new Error('Connect a valid Stellar public account first.');
+  }
+
+  const walletConnection = {
+    walletName: connection.walletName || 'Freighter',
+    publicKey: connection.publicKey.trim(),
+    network: 'TESTNET',
+    connectedAt: new Date().toISOString(),
+  };
+
+  await AsyncStorage.setItem(
+    STORAGE_KEYS.WALLET_CONNECTION,
+    JSON.stringify(walletConnection)
+  );
+
+  return walletConnection;
+}
+
+export async function clearWalletConnection() {
+  await AsyncStorage.removeItem(STORAGE_KEYS.WALLET_CONNECTION);
 }
 
 // ── BR5 outstanding loan balance ──────────────────────────────────────────────
@@ -236,3 +307,40 @@ export async function getTotalCapitalFromLoans() {
     .reduce((sum, l) => sum + Number(l.amountPhpDisplay || 0), 0);
 }
 
+// ── Offline drafts ───────────────────────────────────────────────────────────
+
+export async function getOfflineDrafts() {
+  const rawDrafts = await AsyncStorage.getItem(STORAGE_KEYS.OFFLINE_DRAFTS);
+  const drafts = safeJsonParse(rawDrafts, []);
+  return Array.isArray(drafts) ? drafts : [];
+}
+
+export async function appendOfflineDraft(draft) {
+  if (!draft || !draft.type || !draft.status) {
+    throw new Error('Invalid offline draft.');
+  }
+
+  const existing = await getOfflineDrafts();
+  const updated = [draft, ...existing];
+  await AsyncStorage.setItem(STORAGE_KEYS.OFFLINE_DRAFTS, JSON.stringify(updated));
+  return updated;
+}
+
+// ── Expense ledger ───────────────────────────────────────────────────────────
+
+export async function getExpenseLedger() {
+  const rawLedger = await AsyncStorage.getItem(STORAGE_KEYS.EXPENSE_LEDGER);
+  const ledger = safeJsonParse(rawLedger, []);
+  return Array.isArray(ledger) ? ledger : [];
+}
+
+export async function appendExpenseToLedger(expensePayload) {
+  if (!expensePayload || expensePayload.kind !== 'expense') {
+    throw new Error('Invalid expense payload.');
+  }
+
+  const existing = await getExpenseLedger();
+  const updated = [expensePayload, ...existing];
+  await AsyncStorage.setItem(STORAGE_KEYS.EXPENSE_LEDGER, JSON.stringify(updated));
+  return updated;
+}

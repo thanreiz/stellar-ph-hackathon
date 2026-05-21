@@ -9,7 +9,7 @@ The app is strictly for store inventory financing, supplier invoice settlement, 
 - App type: React Native Expo mobile app
 - Demo targets: Android Studio emulator and physical iPhone through Expo
 - Network: Stellar Testnet only
-- Wallet model: app-owned Stellar secret key loaded from Expo public env variables for hackathon demo signing
+- Wallet model: wallet connection gate for a Stellar/Freighter Testnet public account, with app-owned demo signing keys for hackathon transactions
 - Browser wallet extensions: not used
 - Core state model: offline-first local ledger with AsyncStorage
 - Current demo scope: local ledger, stage/score logic, dashboard modules, QR invoice parsing, and graceful Stellar settlement handling
@@ -160,12 +160,14 @@ Still works offline:
 
 - View cached transaction history
 - Read cached receipts
+- Create a local HTML document from cached receipts and loan records
+- Share the document through the native iOS/Android share sheet
 
-Disabled offline:
+If there are no receipts or loans yet, **Create Document** shows:
 
-- **Create document**
-
-The document action is disabled because full document generation is expected to require an online backend or export service.
+```text
+No recorded transactions.
+```
 
 ## Credit Ladder
 
@@ -355,7 +357,7 @@ npm install
 Start the Expo dev server:
 
 ```bash
-npm start
+npm start -- --port 8082 --clear
 ```
 
 Run on an Android Studio emulator:
@@ -369,6 +371,8 @@ Run on a connected iPhone or Expo Go device:
 ```bash
 npm run demo:ios
 ```
+
+For a face-to-face iPhone demo, keep the laptop and iPhone on the same Wi-Fi, open Expo Go or scan the Expo QR code, then connect the Stellar/Freighter account on the first screen before entering Kaha.
 
 For an Android Studio native project, generate the Android folder first:
 
@@ -418,10 +422,11 @@ rg -n "<blocked terms and blocked wallet package>" -S . -g '!node_modules' -g '!
 
 Last run during development:
 
-- `npm test`: 28 tests passing
-- `npm run doctor`: Expo project health check
-- `npm run demo:android`: primary Android Studio emulator command
-- `npm run demo:ios`: primary iPhone demo command
+- `npm test`: 32 tests passing
+- `npm run doctor`: 17/17 Expo project health checks passing
+- `npx expo export --platform ios --output-dir /tmp/sarisync-ledger-ios-export`: iOS bundle export passing
+- `npx expo export --platform android --output-dir /tmp/sarisync-ledger-android-export`: Android bundle export passing
+- Android emulator: verified at 1080x2400
 - `npm run seed:lenders`: restores demo lender PHPC liquidity on Testnet
 
 Known audit note:
@@ -730,8 +735,15 @@ Covers:
 - Graph remains visible using cached synced ledger data.
 - Tracker and Debt display cached state.
 - Stellar transaction controls are locked offline.
-- Document creation is locked offline.
+- Document creation uses the native file/share flow and can package cached transactions offline.
 - Offline warning remains persistent at the top.
+
+### Wallet Gate And Native Documents
+
+- Added a first-run Stellar/Freighter wallet connection gate before Kaha.
+- Added a native mobile Create Document flow using Expo FileSystem and Sharing.
+- Empty history copy only appears after Create Document is pressed.
+- Microloan receive transactions now send PHPC to the connected Stellar public account.
 
 ## Demo Tips
 
@@ -749,14 +761,16 @@ Covers:
 
 3. Enter a Benta amount and save.
 
-4. Toggle graph ranges:
+4. On first launch, connect a Stellar/Freighter public account or tap **Use Demo Freighter Account**.
+
+5. Toggle graph ranges:
 
    - Year
    - Month
    - Week
    - Day
 
-5. Click through:
+6. Click through:
 
    - Profile
    - Tracker
