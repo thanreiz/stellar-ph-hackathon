@@ -36,11 +36,10 @@ describe("web compatibility", () => {
     assert.match(source, /tx_too_late/);
   });
 
-  it("shows transaction hashes after successful Stellar loan and repayment flows", () => {
+  it("preserves transaction hashes in proof data after successful Stellar flows", () => {
     const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
 
-    assert.match(source, /result\.transactionHash/);
-    assert.match(source, /TX: /);
+    assert.match(source, /txHash:\s*result\.transactionHash/);
   });
 
   it("shows a known-good Testnet transaction hash near the validator field", () => {
