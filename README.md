@@ -121,12 +121,12 @@ Start the development server and clear the cache:
 npx expo start --clear
 ```
 
-### Run on Android Emulator
+### Run on Android Studio emulator
 ```bash
 npm run android
 ```
 
-### Run on iOS Simulator
+### Run on iPhone
 ```bash
 npm run ios
 ```

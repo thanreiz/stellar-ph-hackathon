@@ -11,19 +11,19 @@ const STAGE_META = {
     id: 0,
     key: 'READ_ONLY',
     name: 'Read-Only (Starter)',
-    actionLabel: 'I-record ang benta para ma-unlock',
+    actionLabel: 'Record sales to unlock',
   },
   [CREDIT_STAGES.MICRO_SARI]: {
     id: 1,
     key: 'MICRO_SARI',
     name: 'Micro-Sari (Starter)',
-    actionLabel: 'Pondohan ang Upgrade',
+    actionLabel: 'Fund Upgrade',
   },
   [CREDIT_STAGES.CORNER_STORE]: {
     id: 2,
     key: 'CORNER_STORE',
     name: 'Corner Store (Growth)',
-    actionLabel: 'Utangin ang kulang',
+    actionLabel: 'Borrow shortfall',
   },
 };
 

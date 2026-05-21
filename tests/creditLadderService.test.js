@@ -29,7 +29,7 @@ describe("credit ladder", () => {
     const meta = getStageMetadata(stage);
     assert.equal(meta.id, 1);
     assert.equal(meta.name, "Micro-Sari (Starter)");
-    assert.equal(meta.actionLabel, "Pondohan ang Upgrade");
+    assert.equal(meta.actionLabel, "Fund Upgrade");
     assert.equal(getLoanLimitForStage(stage), 3500);
   });
 
@@ -39,7 +39,7 @@ describe("credit ladder", () => {
     const meta = getStageMetadata(stage);
     assert.equal(meta.id, 2);
     assert.equal(meta.name, "Corner Store (Growth)");
-    assert.equal(meta.actionLabel, "Utangin ang kulang");
+    assert.equal(meta.actionLabel, "Borrow shortfall");
     assert.equal(getLoanLimitForStage(stage), 7500);
   });
 

@@ -31,22 +31,22 @@ export default function OnboardingScreen() {
   const validate = () => {
     const newErrors = {};
     if (!storeName.trim()) {
-      newErrors.storeName = "Kailangan ang pangalan ng tindahan.";
+      newErrors.storeName = "Store name is required.";
     }
     if (!location.trim()) {
-      newErrors.location = "Kailangan ang lokasyon o barangay.";
+      newErrors.location = "Location or barangay is required.";
     }
     if (!monthlyEarnings.trim() || isNaN(Number(monthlyEarnings.replace(/,/g, "")))) {
-      newErrors.monthlyEarnings = "Kailangan ng wastong buwanang kita.";
+      newErrors.monthlyEarnings = "Valid monthly earnings is required.";
     }
     
     // Validate Stellar Public Key format
     const cleanKey = publicKey.trim();
     const stellarPubKeyRegex = /^G[A-Z2-7]{55}$/;
     if (!cleanKey) {
-      newErrors.publicKey = "Kailangan ang iyong Freighter/Stellar Public Key.";
+      newErrors.publicKey = "Your Freighter/Stellar Public Key is required.";
     } else if (!stellarPubKeyRegex.test(cleanKey)) {
-      newErrors.publicKey = "Hindi wasto ang Stellar Public Key (Dapat nagsisimula sa 'G', at may 56 na karakter).";
+      newErrors.publicKey = "Invalid Stellar Public Key (Must start with 'G' and be 56 characters long).";
     }
 
     setErrors(newErrors);
@@ -59,7 +59,7 @@ export default function OnboardingScreen() {
 
   const handleOnboard = async () => {
     if (!validate()) {
-      Alert.alert("Error", "Pakiayos ang mga mali sa ibaba bago magpatuloy.");
+      Alert.alert("Error", "Please fix the errors below before continuing.");
       return;
     }
 
@@ -75,7 +75,7 @@ export default function OnboardingScreen() {
       await completeOnboarding(details);
       router.replace("/");
     } catch (error) {
-      Alert.alert("Error", "Hindi ma-save ang onboarding details. Subukan muli.");
+      Alert.alert("Error", "Could not save onboarding details. Please try again.");
     }
   };
 
@@ -99,22 +99,22 @@ export default function OnboardingScreen() {
           <Text style={[styles.emoji, { color: colors.primary }]}>🏪</Text>
           <Text style={[styles.title, { color: colors.text }]}>SariSync (Kaha)</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            B2B Settlement & Credit Ladder para sa iyong Sari-Sari Store
+            B2B Settlement & Credit Ladder for your Sari-Sari Store
           </Text>
         </View>
 
         {/* Section 1: Store Profile */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>1. Impormasyon ng Tindahan</Text>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>1. Store Information</Text>
           
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Pangalan ng Tindahan</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Store Name</Text>
             <TextInput
               style={[
                 styles.input,
                 { borderColor: errors.storeName ? colors.error : colors.border, color: colors.text, backgroundColor: colors.surfaceLowest }
               ]}
-              placeholder="Hal. Ethan's Sari-Sari Store"
+              placeholder="e.g. Ethan's Sari-Sari Store"
               placeholderTextColor={colors.theme === "dark" ? "#64748B" : "#94A3B8"}
               value={storeName}
               onChangeText={setStoreName}
@@ -123,13 +123,13 @@ export default function OnboardingScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Lokasyon / Barangay</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Location / Barangay</Text>
             <TextInput
               style={[
                 styles.input,
                 { borderColor: errors.location ? colors.error : colors.border, color: colors.text, backgroundColor: colors.surfaceLowest }
               ]}
-              placeholder="Hal. Brgy. 76, Pasay City"
+              placeholder="e.g. Brgy. 76, Pasay City"
               placeholderTextColor={colors.theme === "dark" ? "#64748B" : "#94A3B8"}
               value={location}
               onChangeText={setLocation}
@@ -138,13 +138,13 @@ export default function OnboardingScreen() {
           </View>
 
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Buwanang Kita (₱ PHP)</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Monthly Earnings (₱ PHP)</Text>
             <TextInput
               style={[
                 styles.input,
                 { borderColor: errors.monthlyEarnings ? colors.error : colors.border, color: colors.text, backgroundColor: colors.surfaceLowest }
               ]}
-              placeholder="Hal. 25000"
+              placeholder="e.g. 25000"
               placeholderTextColor={colors.theme === "dark" ? "#64748B" : "#94A3B8"}
               keyboardType="numeric"
               value={monthlyEarnings}
@@ -158,9 +158,9 @@ export default function OnboardingScreen() {
 
         {/* Section 2: Choose Store Level & Theme */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>2. Piliin ang iyong Level at Tema</Text>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>2. Choose your Level and Theme</Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Ang antas o level ay nagtatakda ng iyong limitasyon sa pautang at kulay ng app. Subukan silang pindutin upang makita ang pagbabago ng tema!
+            The level determines your credit limit and app color theme. Try tapping them to see the theme change!
           </Text>
 
           <View style={styles.levelContainer}>
@@ -211,7 +211,7 @@ export default function OnboardingScreen() {
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>3. Freighter Wallet Connection Gate</Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Ipasok ang iyong Stellar Public Key para sa settlement at on-chain verification ng iyong Tiwala Score.
+            Enter your Stellar Public Key for settlement and on-chain verification of your Trust Score.
           </Text>
 
           <View style={styles.inputGroup}>
@@ -246,7 +246,7 @@ export default function OnboardingScreen() {
           ]}
         >
           <Text style={[styles.submitButtonText, { color: colors.buttonTextOnPrimary }]}>
-            Suriin at Mag-onboard
+            Save and Complete Onboarding
           </Text>
         </Pressable>
       </ScrollView>

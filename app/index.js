@@ -96,14 +96,14 @@ const LENDER_OFFERS = [
   },
 ];
 
-const OFFLINE_WARNING = "Naka-Offline Mode. I-save muna sa phone.";
+const OFFLINE_WARNING = "Offline Mode. Save to phone first.";
 const DEMO_TRANSACTION_HASH = "0819554161045c5e2ef2a629dbd10396d504f76862739ceebf8452addf6c9489";
 const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
 
 const NAV_ITEMS = [
-  { id: "Kaha", label: "Kaha", icon: "wallet" },
+  { id: "Kaha", label: "Cash", icon: "wallet" },
   { id: "Tracker", label: "Tracker", icon: "trend" },
-  { id: "Utang", label: "Utang", icon: "loan" },
+  { id: "Utang", label: "Debt", icon: "loan" },
   { id: "Proof", label: "Proof", icon: "proof" },
 ];
 const EXPENSE_PAYMENT_SOURCES = [
@@ -320,20 +320,20 @@ export default function KahaScreen() {
         if (storeSecretKey) {
           setIsSyncingOnChain(true);
           try {
-            setStatusMessage("Sini-sync ang iyong Tiwala Profile sa secure network...");
+            setStatusMessage("Syncing your Trust Profile to the secure network...");
             const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit);
             // 1. Eagerly push confirmed on-chain values the moment the tx finalises
             setOnChainScore(syncResult.confirmedScore);
             setOnChainLimit(syncResult.confirmedLimit);
-            setStatusMessage("Tagumpay na na-sync ang offline Benta at secure profile.");
+            setStatusMessage("Offline Sales and secure profile synced successfully.");
           } catch (sorobanError) {
             console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
-            setStatusMessage(`Na-sync ang offline Benta, ngunit bigo ang on-chain sync: ${sorobanError.message}`);
+            setStatusMessage(`Offline Sales synced, but on-chain sync failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
           }
         } else {
-          setStatusMessage("Na-sync ang offline Benta records.");
+          setStatusMessage("Offline Sales records synced.");
         }
 
         await refreshLedger();
@@ -365,7 +365,7 @@ export default function KahaScreen() {
 
         const ledger = await appendToSyncedSalesLedger([payload]);
         setSyncedLedger(ledger);
-        setStatusMessage("Na-save ang Benta sa synced ledger.");
+        setStatusMessage("Sales saved to synced ledger.");
 
         const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
         if (storeSecretKey) {
@@ -375,22 +375,22 @@ export default function KahaScreen() {
             const newScore = calculateTiwalaScore(totalSyncedBenta);
             const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
 
-            setStatusMessage("Sini-sync ang iyong Tiwala Profile sa secure network...");
+            setStatusMessage("Syncing your Trust Profile to the secure network...");
             const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit);
 
             // 1. Eagerly push confirmed on-chain values as soon as tx finalises on Soroban
             setOnChainScore(syncResult.confirmedScore);
             setOnChainLimit(syncResult.confirmedLimit);
-            setStatusMessage("Sini-sync ang live balances mula sa network...");
+            setStatusMessage("Syncing live balances from the network...");
 
             // 2. Re-fetch verified contract state + updated XLM/PHPC balances (gas deducted)
             await refreshLedger();
-            setStatusMessage("Na-save ang Benta at na-sync sa iyong secure profile!");
+            setStatusMessage("Sales saved and synced to your secure profile!");
 
             checkStageUpgrade(oldTotal, totalSyncedBenta);
           } catch (sorobanError) {
             console.error("Soroban sync failed:", sorobanError);
-            setStatusMessage(`Na-save ang benta, ngunit bigo ang on-chain sync: ${sorobanError.message}`);
+            setStatusMessage(`Sales saved, but on-chain sync failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
           }
@@ -420,7 +420,7 @@ export default function KahaScreen() {
       const updatedExpenses = await appendExpenseToLedger(payload);
       setExpenses(updatedExpenses);
       setExpenseAmount("");
-      setStatusMessage("Na-save ang expense record.");
+      setStatusMessage("Expense record saved.");
     } catch (error) {
       Alert.alert("Expense error", error.message);
     }
@@ -475,7 +475,7 @@ export default function KahaScreen() {
 
   async function handleReceiveLoan(offer) {
     try {
-      setStatusMessage("Humihingi ng loan sa " + offer.name + "...");
+      setStatusMessage("Requesting loan from " + offer.name + "...");
       const result = await receiveLoanFromLender({
         lenderSecretKey: offer.secretKey,
         amountPhpc: offer.amountPhpc,
@@ -498,9 +498,9 @@ export default function KahaScreen() {
       await setOutstandingLoanBalance(current + offer.amountPhpc);
       await refreshLedger();
       setStatusMessage(
-        "✅ Natanggap ang ₱" +
+        "✅ Received ₱" +
           offer.amountPhpc.toLocaleString() +
-          " mula sa " +
+          " from " +
           offer.name +
           ". TX: " +
           result.transactionHash,
@@ -525,7 +525,7 @@ export default function KahaScreen() {
         return;
       }
 
-      setStatusMessage("Nagbabayad sa " + loan.lenderName + "...");
+      setStatusMessage("Paying " + loan.lenderName + "...");
       const result = await repayLoan({
         lenderPublicKey: loan.lenderPublicKey,
         amountPhpc: loan.amountPhpc,
@@ -537,7 +537,7 @@ export default function KahaScreen() {
       await setOutstandingLoanBalance(Math.max(0, current - loan.amountPhpc));
       await refreshLedger();
       setStatusMessage(
-        "✅ Nabayaran na ang utang sa " +
+        "✅ Debt paid to " +
           loan.lenderName +
           ". TX: " +
           result.transactionHash,
@@ -615,7 +615,7 @@ export default function KahaScreen() {
           ]}
         >
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.text }}>
-            {network.isOffline ? "🔴 SariSync Wallet: Offline" : "🟢 Konektado: SariSync Wallet"}
+            {network.isOffline ? "🔴 SariSync Wallet: Offline" : "🟢 Connected: SariSync Wallet"}
           </Text>
         </Pressable>
       </View>
@@ -656,7 +656,7 @@ export default function KahaScreen() {
             ]}
           >
             <Text style={{ fontSize: 13, fontWeight: "800", color: network.isOffline ? colors.textSecondary : colors.buttonTextOnPrimary }}>
-              {network.isOffline ? "Offline" : "I-Cash Out 💸"}
+              {network.isOffline ? "Offline" : "Cash Out 💸"}
             </Text>
           </Pressable>
         </View>
@@ -667,7 +667,7 @@ export default function KahaScreen() {
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              Total Synced Benta
+              Total Synced Sales
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
               {formatPhp(totalSyncedBenta)}
@@ -684,7 +684,7 @@ export default function KahaScreen() {
           {cashOutTotal > 0 && (
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-                Cash Out (Na-withdraw)
+                Cash Out (Withdrawn)
               </Text>
               <Text style={{ fontSize: 13, color: colors.error, fontWeight: "800" }}>
                 -{formatPhp(cashOutTotal)}
@@ -697,16 +697,16 @@ export default function KahaScreen() {
       {/* ─── BENTO GRID HERO (matches Stitch design) ─── */}
       <View style={styles.bentoHero}>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Benta Ngayon" value={formatPhp(salesToday)} tone="positive" />
+          <BentoMetricCard label="Sales Today" value={formatPhp(salesToday)} tone="positive" />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Mga Gastos" value={formatPhp(expenseTotal)} tone="expense" />
+          <BentoMetricCard label="Expenses" value={formatPhp(expenseTotal)} tone="expense" />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Tiwala Score" value={`${displayScore}`} />
+          <BentoMetricCard label="Trust Score" value={`${displayScore}`} />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Limit sa Utang" value={formatPhp(displayLimit)} tone="positive" />
+          <BentoMetricCard label="Credit Limit" value={formatPhp(displayLimit)} tone="positive" />
         </View>
       </View>
 
@@ -715,8 +715,8 @@ export default function KahaScreen() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
             {stage === CREDIT_STAGES.CORNER_STORE
-              ? "Tiwala Score & Limits: Max Stage"
-              : `Tiwala Score & Limits: ${stageMeta.name}`}
+              ? "Trust Score & Limits: Max Stage"
+              : `Trust Score & Limits: ${stageMeta.name}`}
           </Text>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.primary }}>
             {stage === CREDIT_STAGES.READ_ONLY
@@ -745,10 +745,10 @@ export default function KahaScreen() {
         </View>
         <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>
           {stage === CREDIT_STAGES.READ_ONLY
-            ? `Mag-record pa ng ${formatPhp(Math.max(0, 5000 - totalSyncedBenta))} na benta upang ma-unlock ang Micro-Sari stage.`
+            ? `Record ${formatPhp(Math.max(0, 5000 - totalSyncedBenta))} more in sales to unlock Micro-Sari stage.`
             : stage === CREDIT_STAGES.MICRO_SARI
-            ? `Mag-record pa ng ${formatPhp(Math.max(0, 30000 - totalSyncedBenta))} na benta upang ma-unlock ang Corner Store stage.`
-            : "Nasa pinakamataas na Stage na (Max Stage)"}
+            ? `Record ${formatPhp(Math.max(0, 30000 - totalSyncedBenta))} more in sales to unlock Corner Store stage.`
+            : "Already at the highest Stage (Max Stage)"}
         </Text>
       </View>
 
@@ -786,7 +786,7 @@ export default function KahaScreen() {
           ]}
         >
           <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-            I-record ang Benta / Gastos
+            Record Sales / Expenses
           </Text>
         </Pressable>
       </View>
@@ -850,7 +850,7 @@ export default function KahaScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-            <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 16 }]}>I-record ang Transaksyon</Text>
+            <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 16 }]}>Record Transaction</Text>
 
             {/* Tab Selector */}
             <View style={[styles.rangeRow, { marginBottom: 16 }]}>
@@ -872,7 +872,7 @@ export default function KahaScreen() {
                     activeRecordTab === "benta" && { color: theme === "light" ? "#FFFFFF" : "#111411" }
                   ]}
                 >
-                  Benta (Pumasok)
+                  Sales (Inflow)
                 </Text>
               </Pressable>
               <Pressable
@@ -893,7 +893,7 @@ export default function KahaScreen() {
                     activeRecordTab === "gastos" && { color: theme === "light" ? "#FFFFFF" : "#111411" }
                   ]}
                 >
-                  Gastos (Lumabas)
+                  Expenses (Outflow)
                 </Text>
               </Pressable>
             </View>
@@ -901,12 +901,12 @@ export default function KahaScreen() {
             {/* Form Fields based on Active Tab */}
             {activeRecordTab === "benta" ? (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Log daily Benta</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Log Daily Sales</Text>
                 <TextInput
                   value={bentaAmount}
                   onChangeText={setBentaAmount}
                   keyboardType="number-pad"
-                  placeholder="Hal. 2500"
+                  placeholder="e.g. 2500"
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
@@ -922,22 +922,22 @@ export default function KahaScreen() {
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    {isSavingBenta ? "Sine-save..." : "I-save ang Benta"}
+                    {isSavingBenta ? "Saving..." : "Save Sales"}
                   </Text>
                 </Pressable>
               </View>
             ) : (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>I-record ang Gastos</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Record Expenses</Text>
                 <TextInput
                   value={expenseAmount}
                   onChangeText={setExpenseAmount}
                   keyboardType="number-pad"
-                  placeholder="Hal. 1200"
+                  placeholder="e.g. 1200"
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
-                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Pinambayad</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Payment Method</Text>
                 <View style={[styles.rangeRow, { flexWrap: "wrap", gap: 6 }]}>
                   {EXPENSE_PAYMENT_SOURCES.map((source) => (
                     <Pressable
@@ -972,7 +972,7 @@ export default function KahaScreen() {
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    I-save ang Expense
+                    Save Expense
                   </Text>
                 </Pressable>
               </View>
@@ -991,7 +991,7 @@ export default function KahaScreen() {
               }}
               style={[styles.secondaryButton, { backgroundColor: colors.cardSecondary, borderColor: colors.border, marginTop: 16 }]}
             >
-              <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Isara</Text>
+              <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Close</Text>
             </Pressable>
           </View>
         </View>
@@ -1001,11 +1001,11 @@ export default function KahaScreen() {
       <Modal visible={isWalletModalVisible} transparent animationType="fade" onRequestClose={() => setIsWalletModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Detalye ng Wallet</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Wallet Details</Text>
             
             <View style={{ gap: 12, marginTop: 12 }}>
               <View style={{ gap: 4 }}>
-                <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary }}>Address ng iyong Tindahan Wallet</Text>
+                <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary }}>Your Store Wallet Address</Text>
                 <View style={{ backgroundColor: colors.cardSecondary, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
                   <Text style={{ fontSize: 12, color: colors.text, fontFamily: "monospace" }} selectable={true}>
                     {walletConnection?.publicKey}
@@ -1014,7 +1014,7 @@ export default function KahaScreen() {
               </View>
 
               <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
-                Ang wallet address na ito ang nagsisilbing digital ID ng iyong tindahan upang ligtas na ma-verify ang iyong Tiwala Score at mga resibo.
+                This wallet address serves as your store's digital ID to securely verify your Trust Score and receipts.
               </Text>
             </View>
 
@@ -1026,7 +1026,7 @@ export default function KahaScreen() {
               ]}
               onPress={() => setIsWalletModalVisible(false)}
             >
-              <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Isara</Text>
+              <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Close</Text>
             </Pressable>
 
             <Pressable
@@ -1037,12 +1037,12 @@ export default function KahaScreen() {
               ]}
               onPress={() => {
                 Alert.alert(
-                  "Palitan ang Wallet?",
-                  "Sigurado ka bang gusto mong palitan ang wallet? Mawawala ang kasalukuyang koneksyon ng iyong tindahan wallet.",
+                  "Change Wallet?",
+                  "Are you sure you want to change wallet? The current store wallet connection will be disconnected.",
                   [
-                    { text: "Kanselahin", style: "cancel" },
+                    { text: "Cancel", style: "cancel" },
                     {
-                      text: "Palitan",
+                      text: "Change",
                       style: "destructive",
                       onPress: async () => {
                         setIsWalletModalVisible(false);
@@ -1053,7 +1053,7 @@ export default function KahaScreen() {
                 );
               }}
             >
-              <Text style={[styles.secondaryButtonText, { color: colors.error }]}>Palitan ang Wallet (Disconnect)</Text>
+              <Text style={[styles.secondaryButtonText, { color: colors.error }]}>Change Wallet (Disconnect)</Text>
             </Pressable>
           </View>
         </View>
@@ -1080,10 +1080,10 @@ export default function KahaScreen() {
               🔗 Soroban Network
             </Text>
             <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", fontWeight: "700" }}>
-              Sini-sync ang iyong Tiwala Score at Loan Limit sa blockchain...
+              Syncing your Trust Score and Credit Limit on the blockchain...
             </Text>
             <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: "center", lineHeight: 18 }}>
-              {statusMessage || "Naghihintay ng transaksyon na ma-confirm. Sandali lamang po."}
+              {statusMessage || "Waiting for transaction to confirm. Just a moment."}
             </Text>
             <View style={{
               backgroundColor: colors.surfaceLowest,
@@ -1109,16 +1109,16 @@ export default function KahaScreen() {
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, alignItems: "center", padding: 28 }]}>
             <Text style={{ fontSize: 50, marginBottom: 12 }}>🎉</Text>
             <Text style={[styles.modalTitle, { color: colors.primary, fontSize: 24, textAlign: "center", fontWeight: "900" }]}>
-              Bagong Stage Na-unlock!
+              New Stage Unlocked!
             </Text>
             <Text style={[styles.bodyText, { textAlign: "center", marginTop: 12, fontSize: 16, color: colors.text }]}>
-              Na-unlock ang <Text style={{ fontWeight: "900", color: colors.primary }}>{unlockedStageInfo.stageName}</Text>!
+              Unlocked <Text style={{ fontWeight: "900", color: colors.primary }}>{unlockedStageInfo.stageName}</Text>!
             </Text>
             <Text style={[styles.bodyText, { textAlign: "center", marginTop: 8, fontSize: 16, fontWeight: "700", color: colors.tertiary }]}>
               {formatPhp(unlockedStageInfo.limit)} financing available.
             </Text>
             <Text style={[styles.bodyText, { textAlign: "center", marginTop: 12, fontSize: 13, color: colors.textSecondary }]}>
-              Maaari mo nang gamitin ang iyong credit limit para pondohan ang iyong mga supplier invoices o humingi ng microloan.
+              You can now use your credit limit to fund your supplier invoices or request a microloan.
             </Text>
 
             <Pressable
@@ -1130,7 +1130,7 @@ export default function KahaScreen() {
               onPress={() => setShowUnlockedModal(false)}
             >
               <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                Ipagpatuloy
+                Continue
               </Text>
             </Pressable>
           </View>
@@ -1153,13 +1153,13 @@ export default function KahaScreen() {
             
             {cashOutStep === "form" && (
               <View style={{ gap: 14 }}>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>I-Cash Out (Off-Ramp)</Text>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>Cash Out (Off-Ramp)</Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                  I-convert ang iyong Tindahan Cash at ipadala sa iyong personal na account gamit ang Stellar SEP-24 Anchor.
+                  Convert your Tindahan Cash and transfer to your personal account using Stellar SEP-24 Anchor.
                 </Text>
 
                 <View style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>Piliin ang Provider</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>Select Provider</Text>
                   <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
                     {["GCash", "Maya", "BDO", "BPI"].map((p) => {
                       const isSelected = selectedProvider === p;
@@ -1184,12 +1184,12 @@ export default function KahaScreen() {
                 </View>
 
                 <View style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>Halaga ng Cash Out (₱ PHP)</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>Cash Out Amount (₱ PHP)</Text>
                   <TextInput
                     value={cashOutAmount}
                     onChangeText={setCashOutAmount}
                     keyboardType="numeric"
-                    placeholder="Hal. 500"
+                    placeholder="e.g. 500"
                     placeholderTextColor={colors.textSecondary}
                     style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
                   />
@@ -1197,13 +1197,13 @@ export default function KahaScreen() {
 
                 <View style={{ gap: 6 }}>
                   <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>
-                    {selectedProvider === "GCash" || selectedProvider === "Maya" ? "Numero ng Telepono" : "Numero ng Account"}
+                    {selectedProvider === "GCash" || selectedProvider === "Maya" ? "Phone Number" : "Account Number"}
                   </Text>
                   <TextInput
                     value={simPhoneNumber}
                     onChangeText={setSimPhoneNumber}
                     keyboardType="numeric"
-                    placeholder={selectedProvider === "GCash" || selectedProvider === "Maya" ? "Hal. 09171234567" : "Hal. 1234567890"}
+                    placeholder={selectedProvider === "GCash" || selectedProvider === "Maya" ? "e.g. 09171234567" : "e.g. 1234567890"}
                     placeholderTextColor={colors.textSecondary}
                     style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
                   />
@@ -1225,15 +1225,15 @@ export default function KahaScreen() {
                       const amount = Number(cashOutAmount);
                       const currentCash = calculateTindahanCash(totalSyncedBenta, phpcBalance, cashOutTotal);
                       if (isNaN(amount) || amount <= 0) {
-                        setCashOutError("Paki-lagay ng wastong halaga.");
+                        setCashOutError("Please enter a valid amount.");
                         return;
                       }
                       if (amount > currentCash) {
-                        setCashOutError("Kulang ang iyong Tindahan Cash.");
+                        setCashOutError("Insufficient Tindahan Cash.");
                         return;
                       }
                       if (!simPhoneNumber.trim()) {
-                        setCashOutError("Kailangan ang account/telepono number.");
+                        setCashOutError("Account/phone number is required.");
                         return;
                       }
                       
@@ -1244,7 +1244,7 @@ export default function KahaScreen() {
                       }, 2000);
                     }}
                   >
-                    <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Ipagpatuloy</Text>
+                    <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Continue</Text>
                   </Pressable>
                   <Pressable
                     style={({ pressed }) => [
@@ -1254,7 +1254,7 @@ export default function KahaScreen() {
                     ]}
                     onPress={() => setIsCashOutModalVisible(false)}
                   >
-                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Kanselahin</Text>
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
                   </Pressable>
                 </View>
               </View>
@@ -1262,9 +1262,9 @@ export default function KahaScreen() {
 
             {cashOutStep === "connecting" && (
               <View style={{ alignItems: "center", paddingVertical: 20, gap: 14 }}>
-                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Kumokonekta sa Anchor...</Text>
+                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Connecting to Anchor...</Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>
-                  Sinisimulan ang SEP-24 Cash Out session para sa {selectedProvider}...
+                  Starting SEP-24 Cash Out session for {selectedProvider}...
                 </Text>
                 <View style={{ marginVertical: 10 }}>
                   <Text style={{ fontSize: 40 }}>🔌</Text>
@@ -1279,17 +1279,17 @@ export default function KahaScreen() {
                 </View>
                 
                 <Text style={{ fontSize: 14, color: colors.text, lineHeight: 20 }}>
-                  Mangyaring kumpirmahin ang transfer na nagkakahalaga ng <Text style={{ fontWeight: "800", color: colors.primary }}>₱{Number(cashOutAmount).toLocaleString()}</Text> papuntang <Text style={{ fontWeight: "700" }}>{selectedProvider}</Text> ({simPhoneNumber}).
+                  Please confirm the transfer of <Text style={{ fontWeight: "800", color: colors.primary }}>₱{Number(cashOutAmount).toLocaleString()}</Text> to <Text style={{ fontWeight: "700" }}>{selectedProvider}</Text> ({simPhoneNumber}).
                 </Text>
                 
                 <View style={{ gap: 6 }}>
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary }}>Ipasok ang 6-digit OTP</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary }}>Enter 6-digit OTP</Text>
                   <TextInput
                     value={simOtp}
                     onChangeText={setSimOtp}
                     keyboardType="numeric"
                     maxLength={6}
-                    placeholder="Hal. 123456"
+                    placeholder="e.g. 123456"
                     placeholderTextColor={colors.textSecondary}
                     style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
                   />
@@ -1309,7 +1309,7 @@ export default function KahaScreen() {
                     onPress={() => {
                       setCashOutError("");
                       if (!simOtp.trim() || simOtp.length < 4) {
-                        setCashOutError("Paki-lagay ang wastong OTP code.");
+                        setCashOutError("Please enter a valid OTP code.");
                         return;
                       }
                       setCashOutStep("broadcasting");
@@ -1343,7 +1343,7 @@ export default function KahaScreen() {
                       }, 2000);
                     }}
                   >
-                    <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Kumpirmahin at Magbayad</Text>
+                    <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Confirm and Pay</Text>
                   </Pressable>
                   <Pressable
                     style={({ pressed }) => [
@@ -1353,7 +1353,7 @@ export default function KahaScreen() {
                     ]}
                     onPress={() => setIsCashOutModalVisible(false)}
                   >
-                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Kanselahin</Text>
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
                   </Pressable>
                 </View>
               </View>
@@ -1361,9 +1361,9 @@ export default function KahaScreen() {
 
             {cashOutStep === "broadcasting" && (
               <View style={{ alignItems: "center", paddingVertical: 20, gap: 14 }}>
-                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Bino-broadcast ang Transaksyon...</Text>
+                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Broadcasting Transaction...</Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>
-                  Sumusulat sa Stellar Testnet ledger sa pamamagitan ng GoTyme SEP-24 gateway...
+                  Writing to Stellar Testnet ledger via GoTyme SEP-24 gateway...
                 </Text>
                 <View style={{ marginVertical: 10 }}>
                   <Text style={{ fontSize: 40 }}>📡</Text>
@@ -1374,10 +1374,10 @@ export default function KahaScreen() {
             {cashOutStep === "success" && (
               <View style={{ gap: 14, alignItems: "center" }}>
                 <Text style={{ fontSize: 48 }}>🎉</Text>
-                <Text style={[styles.modalTitle, { color: colors.success, textAlign: "center", fontWeight: "900" }]}>Tagumpay ang Cash Out!</Text>
+                <Text style={[styles.modalTitle, { color: colors.success, textAlign: "center", fontWeight: "900" }]}>Cash Out Successful!</Text>
                 
                 <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", lineHeight: 20 }}>
-                  Ang halagang <Text style={{ fontWeight: "800", color: colors.primary }}>₱{Number(cashOutAmount).toLocaleString()}</Text> ay matagumpay na nailipat sa iyong <Text style={{ fontWeight: "700" }}>{selectedProvider}</Text> account.
+                  The amount of <Text style={{ fontWeight: "800", color: colors.primary }}>₱{Number(cashOutAmount).toLocaleString()}</Text> has been successfully transferred to your <Text style={{ fontWeight: "700" }}>{selectedProvider}</Text> account.
                 </Text>
 
                 <View style={{ width: "100%", backgroundColor: colors.cardSecondary, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, gap: 6 }}>
@@ -1401,7 +1401,7 @@ export default function KahaScreen() {
                   ]}
                   onPress={() => setIsCashOutModalVisible(false)}
                 >
-                  <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Isara</Text>
+                  <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Close</Text>
                 </Pressable>
               </View>
             )}
@@ -1414,10 +1414,10 @@ export default function KahaScreen() {
 }
 
 const LOADING_MESSAGES = [
-  "Kinokonekta ang Kaha...",
-  "Inaayos ang mga Listahan...",
-  "Sini-sync ang mga Utang...",
-  "Binibilang ang Stocks...",
+  "Connecting Kaha...",
+  "Preparing Lists...",
+  "Syncing Loans...",
+  "Counting Stocks...",
 ];
 
 function LoadingScreen() {
@@ -1452,11 +1452,11 @@ function LoadingScreen() {
 
       {/* Brand */}
       <Text style={[styles.loadingTitle, { color: colors.text }]}>SariSync Ledger</Text>
-      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary, letterSpacing: 2, textTransform: "uppercase", marginBottom: 32 }}>Kaagapay ng Tindahan</Text>
+      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary, letterSpacing: 2, textTransform: "uppercase", marginBottom: 32 }}>Your Store Partner</Text>
 
       {/* Rotating message */}
       <Text style={[styles.loadingText, { color: colors.text, marginBottom: 4 }]}>{LOADING_MESSAGES[msgIndex]}</Text>
-      <Text style={[styles.loadingText, { color: colors.textSecondary, fontStyle: "italic", marginBottom: 20, fontSize: 13 }]}>Sandali lamang po.</Text>
+      <Text style={[styles.loadingText, { color: colors.textSecondary, fontStyle: "italic", marginBottom: 20, fontSize: 13 }]}>Just a moment.</Text>
 
       {/* Progress bar */}
       <View style={{ width: 240, height: 6, backgroundColor: colors.border, borderRadius: 99, overflow: "hidden", marginBottom: 32 }}>
@@ -1466,7 +1466,7 @@ function LoadingScreen() {
       {/* Trust badge */}
       <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: colors.cardSecondary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99, gap: 6 }}>
         <Text style={{ color: colors.primary, fontSize: 14 }}>🔒</Text>
-        <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>Ligtas at Secure</Text>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>Safe and Secure</Text>
       </View>
     </View>
   );
@@ -1482,7 +1482,7 @@ function WalletConnectionGate({ onConnect }) {
     setErrorMessage("");
 
     if (!isValidStellarPublicKey(publicKeyToConnect)) {
-      setErrorMessage("I-konek ang isang valid na Stellar Testnet G... public key.");
+      setErrorMessage("Connect a valid Stellar Testnet G... public key.");
       return;
     }
 
@@ -1525,10 +1525,10 @@ function WalletConnectionGate({ onConnect }) {
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 24, borderRadius: 16, width: "100%" }]}>
         <View style={{ alignItems: "center", marginBottom: 16 }}>
           <View style={{ backgroundColor: theme === "light" ? "#A6F8B4" : "#0d6f37", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 99, marginBottom: 12 }}>
-            <Text style={{ color: theme === "light" ? "#005427" : "#A6F8B4", fontSize: 12, fontWeight: "700" }}>Konek Wallet</Text>
+            <Text style={{ color: theme === "light" ? "#005427" : "#A6F8B4", fontSize: 12, fontWeight: "700" }}>Connect Wallet</Text>
           </View>
           <Text style={[styles.bodyText, { color: colors.textSecondary, textAlign: "center", fontSize: 15, paddingHorizontal: 8 }]}>
-            I-konek ang wallet para ma-ready ang Kaha, habang records are secured in the background.
+            Connect wallet to prepare Kaha, while records are secured in the background.
           </Text>
         </View>
 
@@ -1541,7 +1541,7 @@ function WalletConnectionGate({ onConnect }) {
               onChangeText={setPublicKey}
               autoCapitalize="characters"
               autoCorrect={false}
-              placeholder="I-paste ang Stellar G... public key"
+              placeholder="Paste Stellar G... public key"
               placeholderTextColor={colors.textSecondary}
               style={[
                 styles.input,
@@ -1564,14 +1564,14 @@ function WalletConnectionGate({ onConnect }) {
             disabled={isConnecting}
           >
             <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-              {isConnecting ? "Kumokonekta..." : "Konek Freighter Wallet"}
+              {isConnecting ? "Connecting..." : "Connect Freighter Wallet"}
             </Text>
           </Pressable>
 
           {/* Divider */}
           <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 8 }}>
             <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
-            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "600", marginHorizontal: 8 }}>o kaya</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "600", marginHorizontal: 8 }}>or</Text>
             <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
           </View>
 
@@ -1585,7 +1585,7 @@ function WalletConnectionGate({ onConnect }) {
               pressed && styles.pressed,
             ]}
           >
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Gamitin ang Demo Freighter Account</Text>
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Use Demo Freighter Account</Text>
           </Pressable>
 
           {errorMessage ? <Text style={[styles.statusText, { color: colors.error, textAlign: "center", marginTop: 8 }]}>{errorMessage}</Text> : null}
@@ -1626,7 +1626,7 @@ function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isO
       </View>
       <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{capabilities.message}</Text>
       <View style={styles.metricsGrid}>
-        <MiniMetric label="Pending Benta records" value={String(summary.pendingBentaCount)} color={colors.primary} />
+        <MiniMetric label="Pending Sales records" value={String(summary.pendingBentaCount)} color={colors.primary} />
         <MiniMetric label="Draft supplier invoices" value={String(summary.supplierInvoiceDraftCount)} color={colors.tertiary} />
         <MiniMetric label="Draft loan repayments" value={String(summary.repaymentDraftCount)} color={colors.error} />
       </View>
@@ -1660,7 +1660,7 @@ function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit, onChainScore, 
       <Text style={[styles.stageName, { color: colors.text }]}>Store Settings</Text>
       <InfoRow label="Store type" value="Sari-sari inventory business" />
       <InfoRow label="Stage" value={stageMeta.name} />
-      <InfoRow label="Tiwala Score" value={`${displayScore}`} />
+      <InfoRow label="Trust Score" value={`${displayScore}`} />
       <InfoRow label="Loan limit" value={formatPhp(displayLimit)} />
       <InfoRow label="Blockchain Security" value={isOffline ? "Offline Mode (Local)" : "Secured & Verified (Stellar)"} />
     </View>
@@ -1700,13 +1700,13 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
       {isReadOnly ? (
         <View style={[styles.readOnlyBanner, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
           <Text style={[styles.readOnlyText, { color: colors.textSecondary }]}>
-            I-record ang ₱5,000 na benta para ma-unlock ang credit at financing.
+            Record ₱5,000 in sales to unlock credit and financing.
           </Text>
         </View>
       ) : (
         <>
           <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Microloan Offers</Text>
-          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Tumatanggap ng pondo mula sa mga partner na microfinance companies sa Stellar Testnet.</Text>
+          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Receive funds from partner microfinance companies on the Stellar Testnet.</Text>
           {LENDER_OFFERS.map(offer => {
             const isTooHigh = offer.amountPhpc > availableLimit;
             const buttonDisabled = isRequesting || !controlState.canTransact || isTooHigh;
@@ -1729,7 +1729,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                   ]}
                 >
                   <Text style={[styles.loanButtonText, { color: isTooHigh || !controlState.canTransact ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
-                    {!controlState.canTransact ? "Offline" : isTooHigh ? "Mataas" : "Humingi"}
+                    {!controlState.canTransact ? "Offline" : isTooHigh ? "Too High" : "Request"}
                   </Text>
                 </Pressable>
               </View>
@@ -1766,14 +1766,14 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
       <Modal visible={!!selectedOffer} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Kumpirmahin ang Loan</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Confirm Loan</Text>
             {selectedOffer && (
               <>
                 <Text style={[styles.bodyText, { color: colors.text }]}>Lender: <Text style={{ fontWeight: "700" }}>{selectedOffer.name}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Amount: <Text style={{ fontWeight: "700", color: colors.tertiary }}>{formatPhp(selectedOffer.amountPhpc)}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Interest: {selectedOffer.interestRate}</Text>
                 <Text style={[styles.bodyText, { marginTop: 8, color: colors.textSecondary, fontSize: 12 }]}>
-                  Ito ay isang Stellar Testnet transaction. Ang PHPC ay ililipat sa iyong store wallet.
+                  This is a Stellar Testnet transaction. PHPC will be transferred to your store wallet.
                 </Text>
               </>
             )}
@@ -1786,7 +1786,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                 ]}
                 onPress={() => handleRequest(selectedOffer)}
               >
-                <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isRequesting ? "Naghihintay..." : "Tanggapin"}</Text>
+                <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isRequesting ? "Requesting..." : "Accept"}</Text>
               </Pressable>
               <Pressable
                 style={({ pressed }) => [
@@ -1796,7 +1796,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                 ]}
                 onPress={() => setSelectedOffer(null)}
               >
-                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Kanselahin</Text>
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
               </Pressable>
             </View>
           </View>
@@ -1844,7 +1844,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
       {/* Prominent Outstanding Balance Banner */}
       <View style={{ backgroundColor: colors.cardSecondary, padding: 16, borderRadius: 10, borderWidth: 1, borderColor: colors.border, marginVertical: 8 }}>
         <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-          Kabuuang Utang (Outstanding Balance)
+          Total Outstanding Loan Balance
         </Text>
         <Text style={{ fontSize: 26, fontWeight: "900", color: colors.error, marginTop: 4 }}>
           {formatPhp(outstandingBalance)}
@@ -1852,9 +1852,9 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
       </View>
 
       {/* Active debts */}
-      <Text style={[styles.cardLabel, { marginTop: 8, marginBottom: 8, color: colors.textSecondary }]}>Mga Aktibong Utang</Text>
+      <Text style={[styles.cardLabel, { marginTop: 8, marginBottom: 8, color: colors.textSecondary }]}>Active Loans</Text>
       {activeLoans.length === 0 ? (
-        <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Wala kang aktibong utang. Humingi ng loan sa Tracker tab.</Text>
+        <Text style={[styles.bodyText, { color: colors.textSecondary }]}>You have no active loans. Request a loan under the Tracker tab.</Text>
       ) : (
         activeLoans.map(loan => (
           <View key={loan.id} style={[styles.debtRow, { borderColor: colors.border }]}>
@@ -1875,7 +1875,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 ]}
               >
                 <Text style={styles.bayadButtonText}>
-                  {!controlState.canTransact ? "Offline" : "Bayad"}
+                  {!controlState.canTransact ? "Offline" : "Pay"}
                 </Text>
               </Pressable>
             </View>
@@ -1886,7 +1886,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
       {/* Paid debts */}
       {paidLoans.length > 0 && (
         <>
-          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Nabayarang Utang</Text>
+          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Paid Loans</Text>
           {paidLoans.map(loan => (
             <View key={loan.id} style={[styles.debtRow, { borderColor: colors.border }]}>
               <View style={{ flex: 1 }}>
@@ -1933,7 +1933,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
               (isValidating || !validateHash.trim()) && styles.disabled,
             ]}
           >
-            <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isValidating ? "Nag-va-validate..." : "I-Validate"}</Text>
+            <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isValidating ? "Validating..." : "Validate"}</Text>
           </Pressable>
 
           {validationResult && (
@@ -1960,15 +1960,15 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
       <Modal visible={!!confirmLoan} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>Kumpirmahin ang Bayad</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Confirm Payment</Text>
             {confirmLoan && (
               <>
-                <Text style={[styles.bodyText, { color: colors.text }]}>Magbabayad sa: <Text style={{ fontWeight: "700" }}>{confirmLoan.lenderName}</Text></Text>
-                <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Halaga: <Text style={{ fontWeight: "700", color: colors.error }}>{formatPhp(confirmLoan.amountPhpDisplay)}</Text></Text>
+                <Text style={[styles.bodyText, { color: colors.text }]}>Paying: <Text style={{ fontWeight: "700" }}>{confirmLoan.lenderName}</Text></Text>
+                <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Amount: <Text style={{ fontWeight: "700", color: colors.error }}>{formatPhp(confirmLoan.amountPhpDisplay)}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 8, fontSize: 12, color: colors.textSecondary }]}>
                   {controlState.canTransact
-                    ? "Ito ay isang Stellar Testnet transaction na mag-sesend ng PHPC mula sa iyong store wallet."
-                    : "Offline ngayon. Ise-save muna ito bilang repayment draft at hindi pa ibo-broadcast sa Stellar."}
+                    ? "This is a Stellar Testnet transaction that will send PHPC from your store wallet."
+                    : "Offline now. This will be saved as a repayment draft and not yet broadcasted to Stellar."}
                 </Text>
               </>
             )}
@@ -1982,7 +1982,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 onPress={() => handleRepay(confirmLoan)}
               >
                 <Text style={[styles.primaryButtonText, { color: "#FFFFFF" }]}>
-                  {isRepaying ? "Nagbabayad..." : controlState.canTransact ? "Bayaran" : "Save Draft"}
+                  {isRepaying ? "Paying..." : controlState.canTransact ? "Pay" : "Save Draft"}
                 </Text>
               </Pressable>
               <Pressable
@@ -1993,7 +1993,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 ]}
                 onPress={() => setConfirmLoan(null)}
               >
-                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Kanselahin</Text>
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
               </Pressable>
             </View>
           </View>
@@ -2070,7 +2070,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
           pressed && styles.pressed,
         ]}
       >
-        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Gumawa ng Dokumento</Text>
+        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Create Document</Text>
       </Pressable>
       {documentStatusMessage ? (
         <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary, textAlign: "center" }]}>

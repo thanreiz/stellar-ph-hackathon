@@ -106,8 +106,8 @@ describe("mobile demo configuration", () => {
     const source = readProjectFile("app/index.js");
     const storage = readProjectFile("services/storageService.js");
 
-    assertIncludes(source, "I-record ang Gastos");
-    assertIncludes(source, "Pinambayad");
+    assertIncludes(source, "Record Expenses");
+    assertIncludes(source, "Payment Method");
     assertExcludes(source, "Log expense", "Old default expense card label should be replaced.");
     assertExcludes(source, "Expense source", "Old default payment source label should be replaced.");
     assert.match(source, /Cash/);
@@ -130,9 +130,9 @@ describe("mobile demo configuration", () => {
     const source = readProjectFile("app/index.js");
     const uiSource = readProjectFile("components/SariSyncUI.js");
 
-    assertMatches(source, /label:\s*"Kaha"/, "Expected Kaha tab label.");
+    assertMatches(source, /label:\s*"Cash"/, "Expected Kaha tab label.");
     assertMatches(source, /label:\s*"Tracker"/, "Expected Tracker tab label.");
-    assertMatches(source, /label:\s*"Utang"/, "Expected Utang tab label.");
+    assertMatches(source, /label:\s*"Debt"/, "Expected Utang tab label.");
     assertMatches(source, /label:\s*"Proof"/, "Expected Proof tab label.");
     assertMatches(source, /icon:\s*"wallet"/, "Expected wallet nav icon.");
     assertMatches(source, /icon:\s*"trend"/, "Expected trend nav icon.");
@@ -142,15 +142,15 @@ describe("mobile demo configuration", () => {
     assertIncludes(uiSource, "function AppIcon");
   });
 
-  it("uses polished Filipino metrics and expense card treatment for Choice A", () => {
+  it("uses polished English metrics and expense card treatment for Choice A", () => {
     const source = readProjectFile("app/index.js");
     const uiSource = readProjectFile("components/SariSyncUI.js");
     const metricCardUsages = source.match(/<BentoMetricCard\b/g) ?? [];
 
-    assertIncludes(source, "Benta Ngayon");
-    assertIncludes(source, "Mga Gastos");
-    assertIncludes(source, "Tiwala Score");
-    assertIncludes(source, "Limit sa Utang");
+    assertIncludes(source, "Sales Today");
+    assertIncludes(source, "Expenses");
+    assertIncludes(source, "Trust Score");
+    assertIncludes(source, "Credit Limit");
     assert.ok(
       metricCardUsages.length >= 4,
       `Expected at least four BentoMetricCard usages, found ${metricCardUsages.length}.`,
@@ -164,7 +164,7 @@ describe("mobile demo configuration", () => {
 
     assertIncludes(source, "Proof hidden");
     assertIncludes(source, "Tap to view transaction details");
-    assertIncludes(source, "Gumawa ng Dokumento");
+    assertIncludes(source, "Create Document");
     assertIncludes(source, "Proof center");
     assertIncludes(source, "Transaction details");
     assert.ok(
@@ -176,8 +176,8 @@ describe("mobile demo configuration", () => {
   it("uses friendly wallet connection copy while removing technical validation prompts", () => {
     const source = readProjectFile("app/index.js");
 
-    assertIncludes(source, "Konek Wallet");
-    assertIncludes(source, "I-konek ang wallet");
+    assertIncludes(source, "Connect Wallet");
+    assertIncludes(source, "Connect wallet");
     assertMatches(
       source,
       /records (are secured in the background|sa background)/,

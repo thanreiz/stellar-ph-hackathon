@@ -260,7 +260,7 @@ export default function ScannerScreen() {
         });
 
         if (!loanResult.success) {
-          throw new Error(`Bigo ang hiram sa Kaagapay: ${loanResult.error}`);
+          throw new Error(`Borrowing from Kaagapay failed: ${loanResult.error}`);
         }
 
         loanTxHash = loanResult.transactionHash;
@@ -380,7 +380,7 @@ export default function ScannerScreen() {
 
           {/* Floating instructions overlay */}
           <View style={styles.floatingHelper}>
-            <Text style={styles.floatingText}>Itapat ang camera sa QR code o JSON ng supplier invoice.</Text>
+            <Text style={styles.floatingText}>Point the camera at the supplier invoice QR code or JSON.</Text>
             <View style={styles.statusBadge}>
               <View style={styles.statusDot} />
               <Text style={styles.statusText}>Ready to Scan</Text>
@@ -434,12 +434,12 @@ export default function ScannerScreen() {
                   setShowQrError(false);
                 }}
               >
-                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>I-validate ang Stellar Invoice</Text>
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Validate Stellar Invoice</Text>
               </Pressable>
             </View>
 
             <Text style={{ textAlign: "center", fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>
-              ℹ️ Ligtas at naka-encrypt ang lahat ng data sa Stellar Ledger.
+              ℹ️ All data is secure and encrypted on the Stellar Ledger.
             </Text>
 
             {scanError && !showQrError ? (
@@ -454,9 +454,9 @@ export default function ScannerScreen() {
         <Modal visible={showQrError} transparent animationType="fade">
           <View style={styles.modalOverlay}>
             <View style={[styles.errorModal, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 24 }]}>
-              <Text style={[styles.errorTitle, { color: colors.error }]}>Mali ang QR Code</Text>
+              <Text style={[styles.errorTitle, { color: colors.error }]}>Invalid QR Code</Text>
               <Text style={[styles.errorBody, { color: colors.textSecondary }]}>
-                I-check ang QR code ng supplier at subukan ulit.
+                Check the supplier's QR code and try again.
               </Text>
               <Pressable
                 style={({ pressed }) => [
@@ -506,20 +506,20 @@ export default function ScannerScreen() {
               Invoice #INV-2024-089
             </Text>
 
-            <View style={{ marginTop: 16, alignItems: "center" }}>
-              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600", marginBottom: 2 }}>Kabuuang Halaga (Total Amount)</Text>
+            <View style={{ marginTop: 24, alignItems: "center" }}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600", marginBottom: 2 }}>Total Amount</Text>
               <Text style={{ fontSize: 28, fontWeight: "900", color: colors.primary }}>{formatPhp(totalAmountPhp)}</Text>
               <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: colors.cardSecondary, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 99, marginTop: 6 }}>
                 <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600" }}>🪙 {formatUsdc(invoice.amount_usdc)} Equivalent</Text>
               </View>
             </View>
           </View>
-
+ 
           {/* Kwalipikasyon para sa Pondo Bento section */}
           <View style={[styles.card, { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 24 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
               <Text style={{ fontSize: 18 }}>🛡️</Text>
-              <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>Kwalipikasyon para sa Pondo</Text>
+              <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>Funding Eligibility</Text>
             </View>
 
             {/* Progress bar */}
@@ -534,28 +534,28 @@ export default function ScannerScreen() {
             </View>
 
             {/* Bento tiles */}
-            <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+            <View style={{ flexDirection: "row", gap: 12 }}>
               <View style={[styles.bentoTile, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 16 }]}>
                 <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Tindahan Cash</Text>
                 <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>{formatPhp(tindahanCash)}</Text>
                 <Text style={{ fontSize: 10, color: colors.primary, fontWeight: "700", marginTop: 4 }}>✓ Available</Text>
               </View>
               <View style={[styles.bentoTile, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 16 }]}>
-                <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Shortfall (Kulang)</Text>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Shortfall</Text>
                 <Text style={{ fontSize: 15, fontWeight: "800", color: shortfallPhp > 0 ? colors.error : colors.textSecondary }}>{formatPhp(shortfallPhp)}</Text>
                 <Text style={{ fontSize: 10, color: shortfallPhp > 0 ? colors.error : colors.primary, fontWeight: "700", marginTop: 4 }}>
-                  {shortfallPhp > 0 ? "⚠ KULANG" : "✓ WALANG KULANG"}
+                  {shortfallPhp > 0 ? "⚠ SHORTFALL" : "✓ NO SHORTFALL"}
                 </Text>
               </View>
             </View>
-
+ 
             {/* Stellar Secure block info */}
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.card, padding: 12, borderRadius: 12, borderColor: colors.border, borderWidth: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.card, padding: 12, borderRadius: 12, borderColor: colors.border, borderWidth: 1, marginTop: 12 }}>
               <Text style={{ fontSize: 24 }}>🚀</Text>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>Secure Blockchain Settlement</Text>
                 <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 1, lineHeight: 13 }}>
-                  Ito ay ise-settle sa pamamagitan ng Stellar Testnet para sa mabilis at ligtas na B2B settlement.
+                  This will be settled via Stellar Testnet for fast and secure B2B settlement.
                 </Text>
               </View>
             </View>
@@ -563,32 +563,32 @@ export default function ScannerScreen() {
 
           {/* Details list */}
           <View style={{ gap: 2, paddingHorizontal: 4 }}>
-            <Row label="Kategorya" value="Grocery Supply" />
-            <Row label="Petsa" value="May 21, 2026" />
+            <Row label="Category" value="Grocery Supply" />
+            <Row label="Date" value="May 21, 2026" />
             <Row label="Blockchain ID" value={`${invoice.supplier_pubkey.slice(0, 10)}...${invoice.supplier_pubkey.slice(-8)}`} />
           </View>
 
           <Text style={{ fontSize: 11, fontStyle: "italic", color: colors.textSecondary, textAlign: "center", paddingHorizontal: 16 }}>
-            Pansinin: Ang utang ay may 2% interest rate kada buwan kung hindi mababayaran sa takdang panahon.
+            Note: Loans have a 2% interest rate per month if not paid on time.
           </Text>
 
           {/* Error messages detailing why checkout might be disabled */}
           {stage === CREDIT_STAGES.READ_ONLY && shortfallPhp > 0 ? (
             <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginTop: 8, borderRadius: 16 }]}>
               <Text style={[styles.errorText, { color: colors.error, textAlign: "center", lineHeight: 18 }]}>
-                🔒 Hindi ma-access ang supplier financing. Mag-record pa ng benta sa Kaha dashboard para ma-unlock ang credit line (kailangan ng hindi bababa sa ₱5,000 kabuuang benta).
+                🔒 Supplier financing is locked. Record more sales on the Kaha dashboard to unlock your credit line (requires at least ₱5,000 in total sales).
               </Text>
             </View>
           ) : isDropLocked && shortfallPhp > 0 ? (
             <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginTop: 8, borderRadius: 16 }]}>
               <Text style={[styles.errorText, { color: colors.error, textAlign: "center", lineHeight: 18 }]}>
-                🔒 Hindi pwede mag-utang muna. Babaan muna ang natitirang utang bago makakuha ng bagong financing.
+                🔒 New borrowing is locked. Pay down your outstanding loan balance before requesting new financing.
               </Text>
             </View>
           ) : shortfallPhp > remainingBorrowCapacity ? (
             <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginTop: 8, borderRadius: 16 }]}>
               <Text style={[styles.errorText, { color: colors.error, textAlign: "center", lineHeight: 18 }]}>
-                ⚠ Ang kulang na {formatPhp(shortfallPhp)} ay lumalagpas sa iyong natitirang limit sa utang ({formatPhp(remainingBorrowCapacity)}). Magbayad muna ng ibang utang para ma-unlock.
+                ⚠ The shortfall of {formatPhp(shortfallPhp)} exceeds your remaining credit limit ({formatPhp(remainingBorrowCapacity)}). Pay down outstanding loans to unlock.
               </Text>
             </View>
           ) : null}
@@ -613,10 +613,10 @@ export default function ScannerScreen() {
             onPress={handleMagbayadNgSupply}
           >
             <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>
-              {network.isOffline ? "Offline" : isSettling ? "Nagbabayad..." : "Magbayad ng Supply"}
+              {network.isOffline ? "Offline" : isSettling ? "Paying..." : "Pay Supplier"}
             </Text>
           </Pressable>
-
+ 
           <Pressable
             style={({ pressed }) => [
               styles.secondaryButton,
@@ -625,7 +625,7 @@ export default function ScannerScreen() {
             ]}
             onPress={() => setCurrentStep("scan")}
           >
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Bumalik sa Pag-scan</Text>
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Back to Scanning</Text>
           </Pressable>
         </View>
 
@@ -634,9 +634,9 @@ export default function ScannerScreen() {
           <View style={styles.modalOverlay}>
             <View style={[styles.errorModal, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 24 }]}>
               <Text style={{ fontSize: 32, textAlign: "center", marginBottom: 12 }}>💸</Text>
-              <Text style={[styles.errorTitle, { color: colors.primary, textAlign: "center" }]}>Kulang ng {formatPhp(shortfallPhp)}</Text>
+              <Text style={[styles.errorTitle, { color: colors.primary, textAlign: "center" }]}>Shortfall of {formatPhp(shortfallPhp)}</Text>
               <Text style={[styles.errorBody, { color: colors.textSecondary, marginTop: 8 }]}>
-                Ang iyong Tindahan Cash ay hindi sapat para bayaran ang supply. Gusto mo bang utangin ang kulang na {formatPhp(shortfallPhp)} sa Kaagapay Microfinance?
+                Your Tindahan Cash is not enough to pay for this supply. Do you want to borrow the shortfall of {formatPhp(shortfallPhp)} from Kaagapay Microfinance?
               </Text>
               
               <View style={{ width: "100%", gap: 10, marginTop: 20 }}>
@@ -652,7 +652,7 @@ export default function ScannerScreen() {
                   }}
                 >
                   <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>
-                    Oo, utangin at magbayad
+                    Yes, borrow and pay
                   </Text>
                 </Pressable>
                 
@@ -667,7 +667,7 @@ export default function ScannerScreen() {
                   }}
                 >
                   <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-                    Kanselahin
+                    Cancel
                   </Text>
                 </Pressable>
               </View>
@@ -698,7 +698,7 @@ export default function ScannerScreen() {
                 <Text style={{ fontSize: 36, color: "#FFFFFF" }}>✓</Text>
               </View>
             </View>
-            <Text style={{ fontSize: 26, fontWeight: "900", color: "#1A6B4A", marginTop: 12 }}>Bayad Na!</Text>
+            <Text style={{ fontSize: 26, fontWeight: "900", color: "#1A6B4A", marginTop: 12 }}>Paid!</Text>
           </View>
 
           {/* Receipt card element */}
@@ -709,7 +709,7 @@ export default function ScannerScreen() {
             <View style={{ padding: 24, gap: 16 }}>
               <View style={{ alignSelf: "center", backgroundColor: colors.cardSecondary, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 99, flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={{ fontSize: 12, color: colors.primary }}>✓</Text>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.text }}>Kumpirmadong Settled</Text>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.text }}>Confirmed Settled</Text>
               </View>
 
               <View style={{ alignItems: "center", gap: 2 }}>
@@ -727,11 +727,11 @@ export default function ScannerScreen() {
 
               <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 8 }}>
                 <View>
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary }}>Petsa</Text>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary }}>Date</Text>
                   <Text style={{ fontSize: 14, fontWeight: "800", color: colors.text, marginTop: 2 }}>May 21, 2026</Text>
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary }}>Paraan</Text>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary }}>Method</Text>
                   <Text style={{ fontSize: 14, fontWeight: "800", color: colors.text, marginTop: 2 }}>Ledger Wallet</Text>
                 </View>
               </View>
@@ -756,17 +756,17 @@ export default function ScannerScreen() {
           <Pressable
             style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.primary, borderRadius: 99 }, pressed && styles.pressed]}
             onPress={() => {
-              alert("Gumawa ng Dokumento: Resibo ay matagumpay na na-download sa storage!");
+              alert("Create Document: Receipt successfully downloaded to storage!");
             }}
           >
-            <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>Gumawa ng Dokumento</Text>
+            <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>Create Document</Text>
           </Pressable>
 
           <Pressable
             style={({ pressed }) => [styles.secondaryButton, { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99 }, pressed && styles.pressed]}
             onPress={() => router.replace("/")}
           >
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Bumalik sa Kaha</Text>
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Back to Kaha Dashboard</Text>
           </Pressable>
         </View>
       </View>
