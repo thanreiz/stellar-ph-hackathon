@@ -1950,13 +1950,13 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
             <View style={styles.alignRight}>
               <Text style={[styles.debtAmount, { color: colors.error }]}>{formatPhp(loan.amountPhpDisplay)}</Text>
               <Pressable
-                disabled={isRepaying || !controlState.canTransact}
+                disabled={isRepaying}
                 onPress={() => setConfirmLoan(loan)}
                 style={({ pressed }) => [
                   styles.bayadButton,
                   { backgroundColor: !controlState.canTransact ? colors.border : colors.error },
-                  pressed && !isRepaying && controlState.canTransact && styles.pressed,
-                  (isRepaying || !controlState.canTransact) && styles.disabled,
+                  pressed && !isRepaying && styles.pressed,
+                  isRepaying && styles.disabled,
                 ]}
               >
                 <Text style={styles.bayadButtonText}>
