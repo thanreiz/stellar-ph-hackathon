@@ -6,6 +6,20 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Status](https://img.shields.io/badge/status-production--grade-22c55e)](https://github.com/thanreiz/stellar-ph-hackathon)
 [![Last Commit](https://img.shields.io/github/last-commit/thanreiz/stellar-ph-hackathon?label=last%20commit)](https://github.com/thanreiz/stellar-ph-hackathon/commits/main)
+---
+
+## 🏆 Build on Stellar Philippines Hackathon Submission
+
+This project was built for the **Build on Stellar Philippines Hackathon (May 18–24, 2026)** organized by **Rise In** in partnership with the **Stellar Development Foundation**.
+
+### 🔗 Submission Deliverables
+
+> [!IMPORTANT]
+> **To the Judges:** Please use the following links to review the project deliverables:
+> - **🎥 5-Minute Demo Video:** [Watch the Demo Video (Loom/YouTube)](YOUR_DEMO_VIDEO_LINK_HERE) *<!-- Replace with your actual video link -->*
+> - **📊 Pitch Deck / Presentation:** [View the Pitch Presentation (Canva/Google Slides)](YOUR_PITCH_DECK_LINK_HERE) *<!-- Replace with your actual pitch deck link -->*
+> - **⛓️ Soroban Smart Contract (Testnet):** [`CDUE6YHQ5OIIPBLROKUXVIW7HWTPPI4NVNYWA2IKARD6JNH5AYUUQ2OR`](https://stellar.expert/explorer/testnet/contract/CDUE6YHQ5OIIPBLROKUXVIW7HWTPPI4NVNYWA2IKARD6JNH5AYUUQ2OR)
+> - **🏦 Live Store Testnet Wallet:** [`GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2`](https://stellar.expert/explorer/testnet/account/GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2)
 
 ---
 
