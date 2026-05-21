@@ -150,7 +150,11 @@ describe("mobile demo configuration", () => {
     assertIncludes(source, "Benta");
     assertIncludes(source, "Gastos");
     assertIncludes(source, "Tiwala Score");
-    assertIncludes(source, "Limit");
+    assertMatches(
+      source,
+      /<BentoMetricCard\s+label="Limit"/,
+      "Expected the dashboard bento metric label to be exactly Limit.",
+    );
     assertIncludes(source, "Tindahan Cash");
     assert.ok(
       metricCardUsages.length >= 4,
