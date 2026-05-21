@@ -322,13 +322,19 @@ export default function KahaScreen() {
 
         const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
         if (storeSecretKey) {
+          setIsSyncingOnChain(true);
           try {
             setStatusMessage("Sini-sync ang iyong Tiwala Profile sa secure network...");
-            await syncProfileToChain(storeSecretKey, newScore, newLimit);
+            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit);
+            // 1. Eagerly push confirmed on-chain values the moment the tx finalises
+            setOnChainScore(syncResult.confirmedScore);
+            setOnChainLimit(syncResult.confirmedLimit);
             setStatusMessage("Tagumpay na na-sync ang offline Benta at secure profile.");
           } catch (sorobanError) {
             console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
             setStatusMessage(`Na-sync ang offline Benta, ngunit bigo ang on-chain sync: ${sorobanError.message}`);
+          } finally {
+            setIsSyncingOnChain(false);
           }
         } else {
           setStatusMessage("Na-sync ang offline Benta records.");
@@ -372,12 +378,19 @@ export default function KahaScreen() {
             const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
             const newScore = calculateTiwalaScore(totalSyncedBenta);
             const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
-            
+
             setStatusMessage("Sini-sync ang iyong Tiwala Profile sa secure network...");
-            await syncProfileToChain(storeSecretKey, newScore, newLimit);
-            setStatusMessage("Na-save ang Benta at na-sync sa iyong secure profile!");
-            
+            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit);
+
+            // 1. Eagerly push confirmed on-chain values as soon as tx finalises on Soroban
+            setOnChainScore(syncResult.confirmedScore);
+            setOnChainLimit(syncResult.confirmedLimit);
+            setStatusMessage("Sini-sync ang live balances mula sa network...");
+
+            // 2. Re-fetch verified contract state + updated XLM/PHPC balances (gas deducted)
             await refreshLedger();
+            setStatusMessage("Na-save ang Benta at na-sync sa iyong secure profile!");
+
             checkStageUpgrade(oldTotal, totalSyncedBenta);
           } catch (sorobanError) {
             console.error("Soroban sync failed:", sorobanError);
@@ -951,6 +964,50 @@ export default function KahaScreen() {
             >
               <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Isara</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Soroban Sync Loading Overlay — blocks interaction while polling for tx finality */}
+      <Modal visible={isSyncingOnChain} transparent animationType="fade">
+        <View style={[styles.modalOverlay, { justifyContent: "center", alignItems: "center" }]}>
+          <View style={[
+            styles.modalCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderWidth: 1,
+              alignItems: "center",
+              padding: 32,
+              gap: 16,
+              maxWidth: 320,
+              width: "85%",
+            },
+          ]}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ fontSize: 20, fontWeight: "800", color: colors.primary, textAlign: "center" }}>
+              🔗 Soroban Network
+            </Text>
+            <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", fontWeight: "700" }}>
+              Sini-sync ang iyong Tiwala Score at Loan Limit sa blockchain...
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: "center", lineHeight: 18 }}>
+              {statusMessage || "Naghihintay ng transaksyon na ma-confirm. Sandali lamang po."}
+            </Text>
+            <View style={{
+              backgroundColor: colors.surfaceLowest,
+              borderRadius: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              width: "100%",
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}>
+              <Text style={{ fontSize: 11, color: colors.textSecondary, fontFamily: "monospace", textAlign: "center" }}>
+                Stellar Testnet · Soroban RPC · Poll ✓2s
+              </Text>
+            </View>
           </View>
         </View>
       </Modal>

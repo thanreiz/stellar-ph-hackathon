@@ -58,6 +58,36 @@ The application enforces a strict "Zero Mock Data" policy for all wallet balance
 
 ---
 
+## ⛓️ Soroban Smart Contract Integration
+
+### Contract: `update_profile` in `contracts/sarisync_contract/src/lib.rs`
+
+The Soroban contract stores each store's on-chain credit profile as a `(u32, u64)` tuple keyed by the store's Stellar `Address`:
+
+| Parameter | Rust Type | Frontend Value |
+|---|---|---|
+| `store` | `Address` | Store's Stellar public key |
+| `score` | `u32` | Tiwala Score (30–95) from `calculateTiwalaScore()` |
+| `loan_limit` | `u64` | PHP credit ceiling (0 / 3500 / 7500) from `getLoanLimitForStage()` |
+
+### Transaction Finality Polling (`services/sorobanService.js`)
+
+After submitting the transaction via `sorobanServer.sendTransaction()`, the app enters a polling loop:
+* **Interval:** Every **2 seconds**
+* **Max duration:** 30 attempts × 2s = **60 seconds max**
+* **Terminal states:** `SUCCESS` → resolves with `{ confirmedScore, confirmedLimit, hash }`. `FAILED` → throws immediately.
+* **Non-terminal states:** `PENDING` / `NOT_FOUND` → continue polling (these are normal during mempool propagation).
+* **Network resilience:** Individual poll errors (network hiccups) are caught and skipped; polling continues.
+
+### React State Refresh on Success (`app/index.js`)
+
+Once `syncProfileToChain` resolves:
+1. **Eager state push:** `setOnChainScore(syncResult.confirmedScore)` and `setOnChainLimit(syncResult.confirmedLimit)` are called immediately — no extra RPC round-trip needed for those values since they are known locally.
+2. **Full ledger refresh:** `refreshLedger()` is then called to re-simulate `get_profile` on-chain AND re-fetch live XLM/PHPC balances (accounting for gas fees deducted from the XLM balance).
+3. **Blocking overlay:** An `ActivityIndicator` Modal overlays the entire screen while polling is in progress, preventing duplicate submissions and showing live status messages.
+
+---
+
 ## 🛠️ Environment Configuration
 
 Copy `.env.example` to `.env` and fill in your keys:
@@ -127,10 +157,12 @@ npx esbuild services/stellarService.js --loader:.js=jsx --outfile=/dev/null
 * **`context/AppContext.js`:** Manages onboarding state, user levels, and dynamic 5-level GoTyme styling theme colors.
 * **`context/ThemeContext.js`:** Wraps `AppContext` and exposes the `useTheme()` hook for styled UI elements.
 * **`app/onboarding.js`:** Renders the Freighter Wallet connection gate and captures store demographics.
-* **`app/index.js`:** Renders the main dashboard, Benta logger, sales graphs, progress bars, and the Cash Out simulation.
+* **`app/index.js`:** Renders the main dashboard, Benta logger, sales graphs, progress bars, and the Cash Out simulation. Handles Soroban post-finality state refresh with an `ActivityIndicator` overlay.
 * **`app/scanner.js`:** Renders the camera scanner viewport and handles shortfall micro-financing settlement.
+* **`services/sorobanService.js`:** Manages all Soroban RPC interactions — `fetchOnChainProfile` (read-only simulation) and `syncProfileToChain` (write with 2s polling loop until `SUCCESS`).
 * **`services/stellarService.js`:** Executes Testnet transactions (`PathPaymentStrictReceive`, `payment`, Horizon balance inquiries).
 * **`services/storageService.js`:** Enqueues offline drafts, syncing ledger history on network reconnect.
 * **`services/creditLadderService.js`:** Defines credit stage boundaries, loan limits, and Tiwala Score equations.
 * **`services/dashboardService.js`:** Groups ledger sales histories into day, week, month, and year graph series.
+* **`contracts/sarisync_contract/src/lib.rs`:** Soroban smart contract storing `(score: u32, loan_limit: u64)` per store address on the Stellar Testnet.
 * **`tests/`:** Holds unit tests checking business rules, network status, offline modes, and Tindahan Cash conversions.
