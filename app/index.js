@@ -1,3 +1,4 @@
+import '../utils/polyfills';
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as FileSystem from "expo-file-system";
@@ -59,6 +60,8 @@ import {
   summarizeOfflineWork,
 } from "../services/offlineDraftService";
 import {
+  fetchXlmToPhpRate,
+  getStoreBalances,
   receiveLoanFromLender,
   repayLoan,
   validateStellarTransaction,
@@ -150,6 +153,10 @@ export default function KahaScreen() {
   const [onChainScore, setOnChainScore] = useState(null);
   const [onChainLimit, setOnChainLimit] = useState(null);
   const [isSyncingOnChain, setIsSyncingOnChain] = useState(false);
+  const [phpcBalance, setPhpcBalance] = useState("0.00");
+  const [xlmBalance, setXlmBalance] = useState("0.0000");
+  const [xlmToPhpRate, setXlmToPhpRate] = useState(8.50);
+  const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
 
   const displayLedger = network.isOffline ? [] : syncedLedger;
   const totalSyncedBenta = useMemo(
@@ -164,6 +171,8 @@ export default function KahaScreen() {
   const stageMeta = getStageMetadata(stage);
   const loanLimit = getLoanLimitForStage(stage);
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
+  const displayScore = (!network.isOffline && onChainScore !== null) ? onChainScore : tiwalaScore;
+  const displayLimit = (!network.isOffline && onChainLimit !== null) ? onChainLimit : loanLimit;
   const graphSeries = useMemo(
     () => getSalesSeries(displayLedger, activeRange),
     [activeRange, displayLedger],
@@ -203,22 +212,43 @@ export default function KahaScreen() {
     setLoans(liveLoans);
     setOfflineDrafts(drafts);
     setExpenses(expenseRecords);
-    setIsLedgerReady(true);
 
     if (!network.isOffline) {
       try {
         const wallet = await getWalletConnection();
         if (wallet && wallet.publicKey) {
-          const profile = await fetchOnChainProfile(wallet.publicKey);
+          const [profile, balances, rate] = await Promise.all([
+            fetchOnChainProfile(wallet.publicKey).catch((err) => {
+              console.error("[SorobanService] Profile query failed:", err);
+              return null;
+            }),
+            getStoreBalances(wallet.publicKey).catch((err) => {
+              console.error("[StellarService] Balances query failed:", err);
+              return null;
+            }),
+            fetchXlmToPhpRate().catch((err) => {
+              console.error("[StellarService] Rate query failed:", err);
+              return null;
+            }),
+          ]);
+
           if (profile) {
             setOnChainScore(profile.score);
             setOnChainLimit(profile.loanLimit);
           }
+          if (balances) {
+            setPhpcBalance(balances.phpc);
+            setXlmBalance(balances.xlm);
+          }
+          if (rate) {
+            setXlmToPhpRate(rate);
+          }
         }
       } catch (err) {
-        console.error("[SorobanService] Failed to fetch profile in refreshLedger:", err);
+        console.error("[SorobanService] Failed to fetch profile/balances in refreshLedger:", err);
       }
     }
+    setIsLedgerReady(true);
   }, [network.isOffline]);
 
   useFocusEffect(
@@ -259,9 +289,9 @@ export default function KahaScreen() {
         const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
         if (storeSecretKey) {
           try {
-            setStatusMessage("Sini-sync ang Tiwala Score sa Stellar chain...");
+            setStatusMessage("Sini-sync ang iyong Tiwala Profile sa secure network...");
             await syncProfileToChain(storeSecretKey, newScore, newLimit);
-            setStatusMessage("Na-sync ang offline Benta at on-chain score.");
+            setStatusMessage("Tagumpay na na-sync ang offline Benta at secure profile.");
           } catch (sorobanError) {
             console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
             setStatusMessage(`Na-sync ang offline Benta, ngunit bigo ang on-chain sync: ${sorobanError.message}`);
@@ -305,19 +335,11 @@ export default function KahaScreen() {
             const newScore = calculateTiwalaScore(totalSyncedBenta);
             const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
             
-            setStatusMessage("Sini-sync ang Tiwala Score sa Stellar chain...");
+            setStatusMessage("Sini-sync ang iyong Tiwala Profile sa secure network...");
             await syncProfileToChain(storeSecretKey, newScore, newLimit);
-            setStatusMessage("Na-save ang Benta at na-sync sa on-chain profile!");
+            setStatusMessage("Na-save ang Benta at na-sync sa iyong secure profile!");
             
-            // Re-fetch the on-chain profile to update UI states
-            const wallet = await getWalletConnection();
-            if (wallet && wallet.publicKey) {
-              const profile = await fetchOnChainProfile(wallet.publicKey);
-              if (profile) {
-                setOnChainScore(profile.score);
-                setOnChainLimit(profile.loanLimit);
-              }
-            }
+            await refreshLedger();
           } catch (sorobanError) {
             console.error("Soroban sync failed:", sorobanError);
             setStatusMessage(`Na-save ang benta, ngunit bigo ang on-chain sync: ${sorobanError.message}`);
@@ -526,60 +548,57 @@ export default function KahaScreen() {
         </Pressable>
       </View>
 
-      {/* Wallet pill and On-chain badge */}
+      {/* Wallet info row */}
       <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 6, marginBottom: 12 }}>
-        <Text style={[styles.walletPill, { marginTop: 0, backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}>
-          Freighter connected · {walletConnection.publicKey.slice(0, 8)}...{walletConnection.publicKey.slice(-6)}
-        </Text>
-        {network.isOffline ? (
-          <View style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-            paddingHorizontal: 10,
-            paddingVertical: 6,
-            borderRadius: 8,
-            backgroundColor: colors.cardSecondary,
-            borderWidth: 1,
-            borderColor: colors.border,
-          }}>
-            <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
-              🛡️ On-chain: Offline
+        <Pressable
+          onPress={() => setIsWalletModalVisible(true)}
+          style={({ pressed }) => [
+            styles.walletPill,
+            { marginTop: 0, backgroundColor: colors.cardSecondary, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 6 },
+            pressed && styles.pressed
+          ]}
+        >
+          <Text style={{ fontSize: 12, fontWeight: "800", color: colors.text }}>
+            {network.isOffline ? "🔴 SariSync Wallet: Offline" : "🟢 Konektado: SariSync Wallet"}
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* ─── WALLET BALANCE CARD ─── */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, borderRadius: 16 }]}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <View>
+            <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Tindahan Cash (Wallet Balance)
+            </Text>
+            <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
+              {formatPhp(Number(phpcBalance))}
             </Text>
           </View>
-        ) : onChainScore !== null ? (
-          <View style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-            paddingHorizontal: 10,
-            paddingVertical: 6,
-            borderRadius: 8,
-            backgroundColor: theme === "light" ? "#E8F5E9" : "#1B5E20",
-            borderWidth: 1,
-            borderColor: theme === "light" ? "#A5D6A7" : "#2E7D32",
-          }}>
-            <Text style={{ fontSize: 12, fontWeight: "800", color: theme === "light" ? "#2E7D32" : "#E8F5E9" }}>
-              🛡️ On-chain Score: {onChainScore} (Limit: ₱{onChainLimit})
+          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.cardSecondary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ fontSize: 18 }}>🪙</Text>
+          </View>
+        </View>
+
+        <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 12 }} />
+
+        {/* Transaction reserve / gas fee display */}
+        <View style={{ gap: 4 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
+              Pang-transaksyon (XLM Fee Reserve)
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
+              {formatPhp(Number(xlmBalance) * xlmToPhpRate)} ({Number(xlmBalance).toFixed(2)} XLM)
             </Text>
           </View>
-        ) : (
-          <View style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 4,
-            paddingHorizontal: 10,
-            paddingVertical: 6,
-            borderRadius: 8,
-            backgroundColor: colors.cardSecondary,
-            borderWidth: 1,
-            borderColor: colors.border,
-          }}>
-            <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
-              🛡️ On-chain: Connecting...
+          
+          <View style={{ marginTop: 4, backgroundColor: colors.cardSecondary, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+            <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 15 }}>
+              ℹ️ Ang bawat transaksyon ay may maliit na bayad o 'pamasahe' sa network. Awtomatiko itong binabawas dito at hindi makakaapekto sa iyong Tindahan Cash.
             </Text>
           </View>
-        )}
+        </View>
       </View>
 
       {/* ─── BENTO GRID HERO (matches Stitch design) ─── */}
@@ -591,10 +610,10 @@ export default function KahaScreen() {
           <BentoMetricCard label="Mga Gastos" value={formatPhp(expenseTotal)} tone="expense" />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Tiwala Score" value={`${tiwalaScore}`} />
+          <BentoMetricCard label="Tiwala Score" value={`${displayScore}`} />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Limit sa Utang" value={formatPhp(loanLimit)} tone="positive" />
+          <BentoMetricCard label="Limit sa Utang" value={formatPhp(displayLimit)} tone="positive" />
         </View>
       </View>
 
@@ -741,13 +760,13 @@ export default function KahaScreen() {
       <IconNav items={NAV_ITEMS} activeId={activeSection} onSelect={setActiveSection} />
 
       {activeSection === "Kaha" ? (
-        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} onChainScore={onChainScore} onChainLimit={onChainLimit} />
+        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} onChainScore={onChainScore} onChainLimit={onChainLimit} isOffline={network.isOffline} />
       ) : null}
       {activeSection === "Tracker" ? (
         <TrackerPanel
           snapshot={businessSnapshot}
           loans={loans}
-          loanLimit={loanLimit}
+          loanLimit={displayLimit}
           stage={stage}
           stageMeta={stageMeta}
           controlState={controlState}
@@ -773,6 +792,41 @@ export default function KahaScreen() {
           documentStatusMessage={documentStatusMessage}
         />
       ) : null}
+
+      {/* Wallet Details Modal */}
+      <Modal visible={isWalletModalVisible} transparent animationType="fade" onRequestClose={() => setIsWalletModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Detalye ng Wallet</Text>
+            
+            <View style={{ gap: 12, marginTop: 12 }}>
+              <View style={{ gap: 4 }}>
+                <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary }}>Address ng iyong Tindahan Wallet</Text>
+                <View style={{ backgroundColor: colors.cardSecondary, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
+                  <Text style={{ fontSize: 12, color: colors.text, fontFamily: "monospace" }} selectable={true}>
+                    {walletConnection?.publicKey}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
+                Ang wallet address na ito ang nagsisilbing digital ID ng iyong tindahan upang ligtas na ma-verify ang iyong Tiwala Score at mga resibo.
+              </Text>
+            </View>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.primaryButton,
+                { backgroundColor: colors.primary, marginTop: 20, borderRadius: 99 },
+                pressed && styles.pressed,
+              ]}
+              onPress={() => setIsWalletModalVisible(false)}
+            >
+              <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Isara</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -1034,16 +1088,20 @@ function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isO
   );
 }
 
-function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit, onChainScore, onChainLimit }) {
+function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit, onChainScore, onChainLimit, isOffline }) {
   const { colors } = useTheme();
+  const displayScore = (!isOffline && onChainScore !== null) ? onChainScore : tiwalaScore;
+  const displayLimit = (!isOffline && onChainLimit !== null) ? onChainLimit : loanLimit;
+
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Profile</Text>
       <Text style={[styles.stageName, { color: colors.text }]}>Store Settings</Text>
       <InfoRow label="Store type" value="Sari-sari inventory business" />
       <InfoRow label="Stage" value={stageMeta.name} />
-      <InfoRow label="Tiwala Score" value={`${tiwalaScore}${onChainScore !== null ? ` (🔗 On-chain: ${onChainScore})` : ""}`} />
-      <InfoRow label="Loan limit" value={`${formatPhp(loanLimit)}${onChainLimit !== null ? ` (🔗 On-chain: ₱${onChainLimit})` : ""}`} />
+      <InfoRow label="Tiwala Score" value={`${displayScore}`} />
+      <InfoRow label="Loan limit" value={formatPhp(displayLimit)} />
+      <InfoRow label="Blockchain Security" value={isOffline ? "Offline Mode (Local)" : "Secured & Verified (Stellar)"} />
     </View>
   );
 }
@@ -1056,6 +1114,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
 
   const activeLoans = loans.filter(l => l.status === "active");
   const loanCapital = activeLoans.reduce((s, l) => s + Number(l.amountPhpDisplay || 0), 0);
+  const availableLimit = Math.max(0, loanLimit - loanCapital);
 
   async function handleRequest(offer) {
     setIsRequesting(true);
@@ -1087,27 +1146,34 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
         <>
           <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Microloan Offers</Text>
           <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Tumatanggap ng pondo mula sa mga partner na microfinance companies sa Stellar Testnet.</Text>
-          {LENDER_OFFERS.map(offer => (
-            <View key={offer.id} style={[styles.lenderCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.lenderName, { color: colors.text }]}>{offer.name}</Text>
-                <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{offer.description}</Text>
-                <Text style={[styles.bodyText, { color: colors.textSecondary, fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
+          {LENDER_OFFERS.map(offer => {
+            const isTooHigh = offer.amountPhpc > availableLimit;
+            const buttonDisabled = isRequesting || !controlState.canTransact || isTooHigh;
+
+            return (
+              <View key={offer.id} style={[styles.lenderCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.lenderName, { color: colors.text }]}>{offer.name}</Text>
+                  <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{offer.description}</Text>
+                  <Text style={[styles.bodyText, { color: colors.textSecondary, fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
+                </View>
+                <Pressable
+                  disabled={buttonDisabled}
+                  onPress={() => setSelectedOffer(offer)}
+                  style={({ pressed }) => [
+                    styles.loanButton,
+                    { backgroundColor: isTooHigh ? colors.border : colors.primary },
+                    pressed && !buttonDisabled && styles.pressed,
+                    buttonDisabled && styles.disabled,
+                  ]}
+                >
+                  <Text style={[styles.loanButtonText, { color: isTooHigh ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
+                    {isTooHigh ? "Mataas" : "Humingi"}
+                  </Text>
+                </Pressable>
               </View>
-              <Pressable
-                disabled={isRequesting || !controlState.canTransact}
-                onPress={() => setSelectedOffer(offer)}
-                style={({ pressed }) => [
-                  styles.loanButton,
-                  { backgroundColor: colors.primary },
-                  pressed && styles.pressed,
-                  (isRequesting || !controlState.canTransact) && styles.disabled,
-                ]}
-              >
-                <Text style={[styles.loanButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Humingi</Text>
-              </Pressable>
-            </View>
-          ))}
+            );
+          })}
 
           {activeLoans.length > 0 && (
             <>

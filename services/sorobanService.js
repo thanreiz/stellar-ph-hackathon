@@ -1,5 +1,5 @@
-import { Server } from '@stellar/stellar-sdk/rpc';
-import { Keypair, Address, Contract, nativeToScVal, scValToNative, TransactionBuilder, Networks } from '@stellar/stellar-sdk';
+import { rpc, Keypair, Address, Contract, nativeToScVal, scValToNative, TransactionBuilder, Networks } from '@stellar/stellar-sdk';
+const { Server } = rpc;
 
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const server = new Server(RPC_URL);
@@ -35,8 +35,12 @@ export async function fetchOnChainProfile(storePublicKey) {
       .setTimeout(30)
       .build();
 
+    const xdrStr = tx.toXDR();
+    console.log('[SorobanService] Built transaction XDR:', xdrStr);
+
     const simResult = await server.simulateTransaction(tx);
     if (simResult.error) {
+      console.error('[SorobanService] simulateTransaction error detail:', JSON.stringify(simResult.error));
       throw new Error(simResult.error);
     }
     

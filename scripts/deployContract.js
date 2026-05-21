@@ -1,5 +1,5 @@
-import { Server } from '@stellar/stellar-sdk/rpc';
-import { Keypair, Operation, TransactionBuilder, Networks, Address, scValToNative } from '@stellar/stellar-sdk';
+import { rpc, Keypair, Operation, TransactionBuilder, Networks, Address, scValToNative } from '@stellar/stellar-sdk';
+const { Server } = rpc;
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';

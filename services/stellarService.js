@@ -308,3 +308,68 @@ export async function validateStellarTransaction(txHash) {
     return { success: false, error: 'Transaction not found on Horizon Testnet.' };
   }
 }
+
+/**
+ * Fetch the store's current on-chain balances for native XLM and custom assets (PHPC, USDC).
+ */
+export async function getStoreBalances(publicKey) {
+  try {
+    const config = getStellarConfig();
+    const server = getHorizonServer();
+    const account = await server.loadAccount(publicKey);
+    
+    let xlmBalance = "0.0000";
+    let phpcBalance = "0.0000";
+    let usdcBalance = "0.0000";
+    
+    account.balances.forEach(b => {
+      if (b.asset_type === "native") {
+        xlmBalance = b.balance;
+      } else if (b.asset_code === "PHPC" && b.asset_issuer === config.phpcIssuer) {
+        phpcBalance = b.balance;
+      } else if (b.asset_code === "USDC" && b.asset_issuer === config.usdcIssuer) {
+        usdcBalance = b.balance;
+      }
+    });
+    
+    return {
+      xlm: xlmBalance,
+      phpc: phpcBalance,
+      usdc: usdcBalance,
+    };
+  } catch (error) {
+    console.error("[StellarService] Failed to fetch balances from Horizon:", error);
+    return null;
+  }
+}
+
+/**
+ * Fetch the current exchange rate of XLM in Philippine Pesos (PHP).
+ * Calls CryptoCompare or CoinGecko dynamically, falling back to 8.5 if rate-limited or offline.
+ */
+export async function fetchXlmToPhpRate() {
+  try {
+    const response = await fetch("https://min-api.cryptocompare.com/data/price?fsym=XLM&tsyms=PHP", {
+      headers: { "Accept": "application/json" }
+    });
+    const data = await response.json();
+    if (data && data.PHP) {
+      return Number(data.PHP);
+    }
+  } catch (error) {
+    console.warn("[StellarService] Failed to fetch XLM rate from cryptocompare, trying CoinGecko...", error);
+    try {
+      const response = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=stellar&vs_currencies=php", {
+        headers: { "Accept": "application/json" }
+      });
+      const data = await response.json();
+      if (data && data.stellar && data.stellar.php) {
+        return Number(data.stellar.php);
+      }
+    } catch (err2) {
+      console.warn("[StellarService] Failed to fetch XLM rate from CoinGecko, using fallback standard.", err2);
+    }
+  }
+  return 8.50; // Fallback rate: 1 XLM = 8.50 PHP
+}
+

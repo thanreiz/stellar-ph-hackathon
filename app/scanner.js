@@ -1,3 +1,4 @@
+import '../utils/polyfills';
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { useFocusEffect, router } from "expo-router";
 import { useCallback, useMemo, useState, useRef, useEffect } from "react";
