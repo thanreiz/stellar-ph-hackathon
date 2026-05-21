@@ -213,6 +213,66 @@ function ProofHint({ onPress, label = "Proof hidden · Tap to view transaction d
   );
 }
 
+function QuickAction({ label, helper, onPress, disabled = false, tone = "primary" }) {
+  const { colors } = useTheme();
+  const isExpense = tone === "expense";
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.quickAction,
+        {
+          backgroundColor: disabled
+            ? colors.cardSecondary
+            : isExpense
+              ? colors.expense
+              : colors.primary,
+          borderColor: disabled ? colors.border : isExpense ? colors.expense : colors.primary,
+          opacity: pressed && !disabled ? 0.82 : 1,
+        },
+      ]}
+    >
+      <Text
+        style={[
+          styles.quickActionLabel,
+          { color: disabled ? colors.textSecondary : colors.buttonTextOnPrimary },
+        ]}
+      >
+        {label}
+      </Text>
+      {helper ? (
+        <Text
+          style={[
+            styles.quickActionHelper,
+            { color: disabled ? colors.textSecondary : colors.buttonTextOnPrimary },
+          ]}
+        >
+          {helper}
+        </Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function ProofDetailsCard({ children }) {
+  const { colors } = useTheme();
+
+  return (
+    <View
+      style={[
+        styles.proofDetailsCard,
+        { backgroundColor: colors.cardSecondary, borderColor: colors.border },
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   bentoRow: {
     gap: 12,
@@ -296,6 +356,36 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: 0,
   },
+  proofDetailsCard: {
+    borderRadius: 18,
+    borderWidth: 1,
+    gap: 12,
+    marginTop: 12,
+    padding: 14,
+    width: "100%",
+  },
+  quickAction: {
+    borderRadius: 18,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 58,
+    minWidth: 104,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  quickActionHelper: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0,
+    marginTop: 2,
+    opacity: 0.86,
+  },
+  quickActionLabel: {
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0,
+  },
   sectionHeader: {
     alignItems: "flex-end",
     flexDirection: "row",
@@ -334,4 +424,6 @@ export {
   BentoMetricCard,
   IconNav,
   ProofHint,
+  ProofDetailsCard,
+  QuickAction,
 };
