@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
+function assertIncludes(source, expected, message = `Expected source to include "${expected}".`) {
+  assert.ok(source.includes(expected), message);
+}
+
 describe("web compatibility", () => {
   it("does not pass React Native style arrays through Expo Router Link anchors", () => {
     const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
@@ -49,8 +53,11 @@ describe("web compatibility", () => {
   it("keeps technical transaction hash language inside proof or validation details", () => {
     const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
 
-    assert.match(source, /Transaction details/);
-    assert.match(source, /Sample Testnet TX/);
-    assert.match(source, /validateHash/);
+    assertIncludes(source, "Transaction details");
+    assertIncludes(source, "Sample Testnet TX");
+    assertIncludes(source, "DEMO_TRANSACTION_HASH");
+    assertIncludes(source, "result.transactionHash");
+    assertIncludes(source, "TX: ");
+    assertIncludes(source, "validateHash");
   });
 });
