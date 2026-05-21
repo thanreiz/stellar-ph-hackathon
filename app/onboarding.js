@@ -160,7 +160,7 @@ export default function OnboardingScreen() {
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>Business Snapshot</Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Pick a starter profile for your demo. This helps SariSync show the right trust level and credit limit.
+            Pick a starter profile for your store. This helps SariSync show the right trust level and credit limit.
           </Text>
 
           <View style={styles.levelContainer}>
