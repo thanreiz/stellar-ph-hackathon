@@ -3,7 +3,7 @@ dist/
 dist-web/
 .expo/
 .playwright-cli/
+.superpowers/
 output/
 .DS_Store
 .env
-
