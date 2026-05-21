@@ -97,15 +97,15 @@ export default function OnboardingScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={[styles.emoji, { color: colors.primary }]}>🏪</Text>
-          <Text style={[styles.title, { color: colors.text }]}>SariSync (Kaha)</Text>
+          <Text style={[styles.title, { color: colors.text }]}>SariSync</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            B2B Settlement & Credit Ladder for your Sari-Sari Store
+            Kaha, utang, and proof for your sari-sari store. Your records are secured in the background.
           </Text>
         </View>
 
         {/* Section 1: Store Profile */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>1. Store Information</Text>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Store Profile</Text>
           
           <View style={styles.inputGroup}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>Store Name</Text>
@@ -158,9 +158,9 @@ export default function OnboardingScreen() {
 
         {/* Section 2: Choose Store Level & Theme */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>2. Choose your Level and Theme</Text>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Business Snapshot</Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            The level determines your credit limit and app color theme. Try tapping them to see the theme change!
+            Pick a starter profile for your demo. This helps SariSync show the right trust level and credit limit.
           </Text>
 
           <View style={styles.levelContainer}>
@@ -168,11 +168,11 @@ export default function OnboardingScreen() {
               const themeInfo = THEMES[lvl];
               const isSelected = userLevel === lvl;
               const lvlNames = {
-                1: "Level 1: Teal",
-                2: "Level 2: Orange",
-                3: "Level 3: Blue",
-                4: "Level 4: Purple",
-                5: "Level 5: Dark",
+                1: "Starting store",
+                2: "Growing tindahan",
+                3: "Steady seller",
+                4: "Corner store",
+                5: "High-volume store",
               };
               
               return (
@@ -209,20 +209,20 @@ export default function OnboardingScreen() {
 
         {/* Section 3: Stellar Wallet Gate */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>3. Freighter Wallet Connection Gate</Text>
+          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Connect Wallet</Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Enter your Stellar Public Key for settlement and on-chain verification of your Trust Score.
+            Connect your Freighter wallet so payments and proof can be verified when you need them.
           </Text>
 
           <View style={styles.inputGroup}>
-            <Text style={[styles.label, { color: colors.textSecondary }]}>Stellar Public Key</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>Wallet Address</Text>
             <TextInput
               style={[
                 styles.input,
                 styles.codeFont,
                 { borderColor: errors.publicKey ? colors.error : colors.border, color: colors.text, backgroundColor: colors.surfaceLowest }
               ]}
-              placeholder="G..."
+              placeholder="Paste your Freighter wallet address"
               placeholderTextColor={colors.theme === "dark" ? "#64748B" : "#94A3B8"}
               autoCapitalize="characters"
               autoCorrect={false}
