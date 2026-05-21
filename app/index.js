@@ -73,7 +73,7 @@ import { generateReceiptDocument } from "../utils/documentGenerator";
 import { formatPhp, formatUsdc } from "../utils/formatters";
 import { useTheme } from "../context/ThemeContext";
 import { useAppContext } from "../context/AppContext";
-import { BentoMetricCard, IconNav, ProofHint, QuickAction } from "../components/SariSyncUI";
+import { BentoMetricCard, IconNav, ProofDetailsCard, ProofHint, QuickAction } from "../components/SariSyncUI";
 
 // Lender accounts (generated via setupLiquidity + generateLenders scripts)
 const LENDER_OFFERS = [
@@ -1774,10 +1774,10 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Tracker</Text>
       <Text style={[styles.stageName, { color: colors.text }]}>Capital movement</Text>
       <View style={styles.metricsGrid}>
-        <MiniMetric label="Spent" value={formatPhp(snapshot.spent)} />
-        <MiniMetric label="Earned" value={formatPhp(snapshot.earned)} color={colors.primary} />
+        <MiniMetric label="Gastos" value={formatPhp(snapshot.spent)} color={colors.expense} />
+        <MiniMetric label="Kita" value={formatPhp(snapshot.earned)} color={colors.primary} />
         <MiniMetric label="Capital" value={formatPhp(snapshot.capital + loanCapital)} color={colors.tertiary} />
-        <MiniMetric label="Active Debt" value={formatPhp(loanCapital)} color={colors.error} />
+        <MiniMetric label="Active Utang" value={formatPhp(loanCapital)} color={colors.error} />
       </View>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
@@ -1790,8 +1790,8 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
         </View>
       ) : (
         <>
-          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Microloan Offers</Text>
-          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Receive funds from partner microfinance companies on the Stellar Testnet.</Text>
+          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Loan Offers</Text>
+          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Partner lenders can fund store inventory when your credit limit is available.</Text>
           {LENDER_OFFERS.map(offer => {
             const isTooHigh = offer.amountPhpc > availableLimit;
             const buttonDisabled = isRequesting || !controlState.canTransact || isTooHigh;
@@ -1814,7 +1814,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                   ]}
                 >
                   <Text style={[styles.loanButtonText, { color: isTooHigh || !controlState.canTransact ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
-                    {!controlState.canTransact ? "Offline" : isTooHigh ? "Too High" : "Request"}
+                    {!controlState.canTransact ? "Offline" : isTooHigh ? "Too High" : "Humingi"}
                   </Text>
                 </Pressable>
               </View>
@@ -1921,15 +1921,15 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Debt</Text>
-      <Text style={[styles.stageName, { color: colors.text }]}>Business debt tracker</Text>
+      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Utang</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Loan repayment</Text>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
 
       {/* Prominent Outstanding Balance Banner */}
       <View style={{ backgroundColor: colors.cardSecondary, padding: 16, borderRadius: 10, borderWidth: 1, borderColor: colors.border, marginVertical: 8 }}>
         <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-          Total Outstanding Loan Balance
+          Total Utang Balance
         </Text>
         <Text style={{ fontSize: 26, fontWeight: "900", color: colors.error, marginTop: 4 }}>
           {formatPhp(outstandingBalance)}
@@ -1937,9 +1937,9 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
       </View>
 
       {/* Active debts */}
-      <Text style={[styles.cardLabel, { marginTop: 8, marginBottom: 8, color: colors.textSecondary }]}>Active Loans</Text>
+      <Text style={[styles.cardLabel, { marginTop: 8, marginBottom: 8, color: colors.textSecondary }]}>Active loans</Text>
       {activeLoans.length === 0 ? (
-        <Text style={[styles.bodyText, { color: colors.textSecondary }]}>You have no active loans. Request a loan under the Tracker tab.</Text>
+        <Text style={[styles.bodyText, { color: colors.textSecondary }]}>No active loans yet. Request a loan in Tracker when your limit is available.</Text>
       ) : (
         activeLoans.map(loan => (
           <View key={loan.id} style={[styles.debtRow, { borderColor: colors.border }]}>
@@ -1960,7 +1960,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 ]}
               >
                 <Text style={styles.bayadButtonText}>
-                  {!controlState.canTransact ? "Offline" : "Pay"}
+                  {!controlState.canTransact ? "Draft" : "Bayad"}
                 </Text>
               </Pressable>
             </View>
@@ -1994,7 +1994,8 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
       </View>
 
       {isProofDetailsOpen ? (
-        <View style={[styles.lenderCard, { marginTop: 12, backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+        /* ProofDetailsCard renders the proofDetailsCard vertical panel style. */
+        <ProofDetailsCard>
           <Text style={[styles.cardLabel, { marginBottom: 8, color: colors.textSecondary }]}>Transaction details</Text>
           <TextInput
             value={validateHash}
@@ -2022,7 +2023,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
           </Pressable>
 
           {validationResult && (
-            <View style={[styles.lenderCard, { marginTop: 12, backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.proofResultCard, { marginTop: 12, backgroundColor: colors.card, borderColor: colors.border }]}>
               {validationResult.success ? (
                 <View style={{ width: "100%" }}>
                   <Text style={[styles.rowLabel, { color: colors.primary }]}>✅ Valid Stellar Transaction</Text>
@@ -2038,7 +2039,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
               )}
             </View>
           )}
-        </View>
+        </ProofDetailsCard>
       ) : null}
 
       {/* Payment confirmation modal */}
@@ -2096,7 +2097,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Proof center</Text>
-      <Text style={[styles.stageName, { color: colors.text }]}>Transaction proof</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Receipts and records</Text>
 
       <View style={styles.metricsGrid}>
         <MiniMetric label="Settlements" value={String(receipts.length)} />
@@ -2155,7 +2156,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
           pressed && styles.pressed,
         ]}
       >
-        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Create Document</Text>
+        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Gumawa ng Dokumento</Text>
       </Pressable>
       {documentStatusMessage ? (
         <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary, textAlign: "center" }]}>
@@ -2573,6 +2574,13 @@ const styles = StyleSheet.create({
     padding: 12,
     backgroundColor: "#FAFAF7",
     marginTop: 8,
+  },
+  proofResultCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    gap: 8,
+    padding: 12,
+    width: "100%",
   },
   lenderName: {
     color: "#17231D",
