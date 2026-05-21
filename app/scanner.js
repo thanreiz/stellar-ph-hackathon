@@ -28,6 +28,8 @@ import {
   appendOfflineDraft,
   appendReceipt,
   getTotalSyncedSalesVolume,
+  getOutstandingLoanBalance,
+  setOutstandingLoanBalance,
 } from "../services/storageService";
 import {
   OFFLINE_DRAFT_TYPES,
@@ -158,6 +160,9 @@ export default function ScannerScreen() {
           txHash: result.transactionHash,
           timestamp: Date.now(),
         });
+
+        const currentOutstanding = await getOutstandingLoanBalance();
+        await setOutstandingLoanBalance(currentOutstanding + (invoice.amount_usdc * 52));
 
         setSettlementResult(result);
         setCurrentStep("success");

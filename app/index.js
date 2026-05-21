@@ -17,6 +17,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import useNetworkStatus from "../hooks/useNetworkStatus";
 import {
+  getOutstandingLoanBalance,
+  setOutstandingLoanBalance,
   appendOfflineDraft,
   appendExpenseToLedger,
   appendLoan,
@@ -157,6 +159,9 @@ export default function KahaScreen() {
   const [xlmBalance, setXlmBalance] = useState("0.0000");
   const [xlmToPhpRate, setXlmToPhpRate] = useState(8.50);
   const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
+  const [outstandingBalance, setOutstandingBalance] = useState(0);
+  const [showUnlockedModal, setShowUnlockedModal] = useState(false);
+  const [unlockedStageInfo, setUnlockedStageInfo] = useState({ stageName: "", limit: 0 });
 
   const displayLedger = network.isOffline ? [] : syncedLedger;
   const totalSyncedBenta = useMemo(
@@ -198,13 +203,14 @@ export default function KahaScreen() {
   const isLoading = !network.hasCheckedInitialStatus || !isLedgerReady || !isWalletReady;
 
   const refreshLedger = useCallback(async () => {
-    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords] = await Promise.all([
+    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords, liveOutstandingBalance] = await Promise.all([
       getPendingSyncQueue(),
       getSyncedSalesLedger(),
       getReceipts(),
       getLoans(),
       getOfflineDrafts(),
       getExpenseLedger(),
+      getOutstandingLoanBalance(),
     ]);
     setPendingQueue(queue);
     setSyncedLedger(ledger);
@@ -212,6 +218,7 @@ export default function KahaScreen() {
     setLoans(liveLoans);
     setOfflineDrafts(drafts);
     setExpenses(expenseRecords);
+    setOutstandingBalance(liveOutstandingBalance);
 
     if (!network.isOffline) {
       try {
@@ -251,6 +258,20 @@ export default function KahaScreen() {
     setIsLedgerReady(true);
   }, [network.isOffline]);
 
+  const checkStageUpgrade = useCallback((oldTotal, newTotal) => {
+    const oldStage = evaluateCreditStage(oldTotal);
+    const newStage = evaluateCreditStage(newTotal);
+    if (oldStage !== newStage) {
+      const nextLimit = getLoanLimitForStage(newStage);
+      const nextMeta = getStageMetadata(newStage);
+      setUnlockedStageInfo({
+        stageName: nextMeta.name,
+        limit: nextLimit,
+      });
+      setShowUnlockedModal(true);
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       refreshLedger().catch((error) => {
@@ -278,6 +299,9 @@ export default function KahaScreen() {
           return;
         }
 
+        const initialLedger = await getSyncedSalesLedger();
+        const oldTotal = initialLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+
         await syncPendingSalesQueue();
 
         // Recalculate score and limit and sync to Stellar contract
@@ -301,6 +325,7 @@ export default function KahaScreen() {
         }
 
         await refreshLedger();
+        checkStageUpgrade(oldTotal, totalSyncedBenta);
       } catch (error) {
         setStatusMessage(error.message);
       }
@@ -323,6 +348,9 @@ export default function KahaScreen() {
         setPendingQueue(queue);
         setStatusMessage(OFFLINE_WARNING);
       } else {
+        const initialLedger = await getSyncedSalesLedger();
+        const oldTotal = initialLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+
         const ledger = await appendToSyncedSalesLedger([payload]);
         setSyncedLedger(ledger);
         setStatusMessage("Na-save ang Benta sa synced ledger.");
@@ -340,12 +368,17 @@ export default function KahaScreen() {
             setStatusMessage("Na-save ang Benta at na-sync sa iyong secure profile!");
             
             await refreshLedger();
+            checkStageUpgrade(oldTotal, totalSyncedBenta);
           } catch (sorobanError) {
             console.error("Soroban sync failed:", sorobanError);
             setStatusMessage(`Na-save ang benta, ngunit bigo ang on-chain sync: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
           }
+        } else {
+          const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+          await refreshLedger();
+          checkStageUpgrade(oldTotal, totalSyncedBenta);
         }
       }
 
@@ -442,6 +475,8 @@ export default function KahaScreen() {
         status: "active",
       };
       await appendLoan(loanRecord);
+      const current = await getOutstandingLoanBalance();
+      await setOutstandingLoanBalance(current + offer.amountPhpc);
       await refreshLedger();
       setStatusMessage(
         "✅ Natanggap ang ₱" +
@@ -479,6 +514,8 @@ export default function KahaScreen() {
       });
       if (!result.success) throw new Error(result.error);
       await updateLoanStatus(loan.id, "paid");
+      const current = await getOutstandingLoanBalance();
+      await setOutstandingLoanBalance(Math.max(0, current - loan.amountPhpc));
       await refreshLedger();
       setStatusMessage(
         "✅ Nabayaran na ang utang sa " +
@@ -617,17 +654,47 @@ export default function KahaScreen() {
         </View>
       </View>
 
-      {/* ─── SCAN SUPPLIER INVOICE CTA ─── */}
-      <Pressable
-        onPress={() => router.push("/scanner")}
-        style={({ pressed }) => [
-          styles.scanCta,
-          pressed && styles.pressed,
-        ]}
-      >
-        <Text style={{ fontSize: 20, color: "#FFFFFF" }}>📷</Text>
-        <Text style={{ fontSize: 16, fontWeight: "800", color: "#FFFFFF" }}>Scan Supplier Invoice</Text>
-      </Pressable>
+      {/* ─── STAGE PROGRESS BAR ─── */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 14, borderRadius: 12 }]}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+          <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
+            {stage === CREDIT_STAGES.CORNER_STORE
+              ? "Credit Ladder Stage: Max Stage"
+              : `Credit Ladder Progress: ${stageMeta.name}`}
+          </Text>
+          <Text style={{ fontSize: 12, fontWeight: "800", color: colors.primary }}>
+            {stage === CREDIT_STAGES.READ_ONLY
+              ? `${formatPhp(totalSyncedBenta)} / ${formatPhp(5000)}`
+              : stage === CREDIT_STAGES.MICRO_SARI
+              ? `${formatPhp(totalSyncedBenta)} / ${formatPhp(30000)}`
+              : "Max Stage"}
+          </Text>
+        </View>
+        <View style={{ height: 8, width: "100%", backgroundColor: colors.cardSecondary, borderRadius: 99, overflow: "hidden", borderWidth: 1, borderColor: colors.border }}>
+          <View
+            style={{
+              height: "100%",
+              width: `${Math.min(
+                100,
+                stage === CREDIT_STAGES.READ_ONLY
+                  ? (totalSyncedBenta / 5000) * 100
+                  : stage === CREDIT_STAGES.MICRO_SARI
+                  ? (totalSyncedBenta / 30000) * 100
+                  : 100
+              )}%`,
+              backgroundColor: colors.primary,
+              borderRadius: 99,
+            }}
+          />
+        </View>
+        <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>
+          {stage === CREDIT_STAGES.READ_ONLY
+            ? `Mag-record pa ng ${formatPhp(Math.max(0, 5000 - totalSyncedBenta))} na benta upang ma-unlock ang Micro-Sari stage.`
+            : stage === CREDIT_STAGES.MICRO_SARI
+            ? `Mag-record pa ng ${formatPhp(Math.max(0, 30000 - totalSyncedBenta))} na benta upang ma-unlock ang Corner Store stage.`
+            : "Nasa pinakamataas na Stage na (Max Stage)"}
+        </Text>
+      </View>
 
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.rowBetween}>
@@ -665,6 +732,30 @@ export default function KahaScreen() {
         </View>
 
         <SalesGraph series={graphSeries} />
+      </View>
+
+      {/* ─── QUICK ACTION FINANCING BUTTON ─── */}
+      <View style={{ gap: 8, marginTop: -4, marginBottom: 4 }}>
+        <Pressable
+          accessibilityRole="button"
+          disabled={stage === CREDIT_STAGES.READ_ONLY}
+          onPress={() => router.push("/scanner")}
+          style={({ pressed }) => [
+            styles.primaryButton,
+            { backgroundColor: colors.primary },
+            pressed && stage !== CREDIT_STAGES.READ_ONLY && styles.pressed,
+            stage === CREDIT_STAGES.READ_ONLY && styles.disabledButton,
+          ]}
+        >
+          <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
+            {stageMeta.actionLabel}
+          </Text>
+        </Pressable>
+        {stage === CREDIT_STAGES.READ_ONLY && (
+          <Text style={[styles.lockHint, { color: colors.textSecondary, textAlign: "center", fontSize: 12, lineHeight: 16 }]}>
+            Mag-record pa ng benta upang ma-unlock ang credit line at supplier financing.
+          </Text>
+        )}
       </View>
 
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -781,6 +872,7 @@ export default function KahaScreen() {
           controlState={controlState}
           onRepayLoan={handleRepayLoan}
           statusMessage={statusMessage}
+          outstandingBalance={outstandingBalance}
         />
       ) : null}
       {activeSection === "Proof" ? (
@@ -823,6 +915,40 @@ export default function KahaScreen() {
               onPress={() => setIsWalletModalVisible(false)}
             >
               <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Isara</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Stage Unlocked Modal */}
+      <Modal visible={showUnlockedModal} transparent animationType="fade" onRequestClose={() => setShowUnlockedModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, alignItems: "center", padding: 28 }]}>
+            <Text style={{ fontSize: 50, marginBottom: 12 }}>🎉</Text>
+            <Text style={[styles.modalTitle, { color: colors.primary, fontSize: 24, textAlign: "center", fontWeight: "900" }]}>
+              Bagong Stage Na-unlock!
+            </Text>
+            <Text style={[styles.bodyText, { textAlign: "center", marginTop: 12, fontSize: 16, color: colors.text }]}>
+              Na-unlock ang <Text style={{ fontWeight: "900", color: colors.primary }}>{unlockedStageInfo.stageName}</Text>!
+            </Text>
+            <Text style={[styles.bodyText, { textAlign: "center", marginTop: 8, fontSize: 16, fontWeight: "700", color: colors.tertiary }]}>
+              {formatPhp(unlockedStageInfo.limit)} financing available.
+            </Text>
+            <Text style={[styles.bodyText, { textAlign: "center", marginTop: 12, fontSize: 13, color: colors.textSecondary }]}>
+              Maaari mo nang gamitin ang iyong credit limit para pondohan ang iyong mga supplier invoices o humingi ng microloan.
+            </Text>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.primaryButton,
+                { backgroundColor: colors.primary, marginTop: 24, borderRadius: 99, width: "100%" },
+                pressed && styles.pressed,
+              ]}
+              onPress={() => setShowUnlockedModal(false)}
+            >
+              <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
+                Ipagpatuloy
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -1245,7 +1371,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
   );
 }
 
-function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
+function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandingBalance }) {
   const { theme, colors } = useTheme();
   const [confirmLoan, setConfirmLoan] = useState(null);
   const [isRepaying, setIsRepaying] = useState(false);
@@ -1279,6 +1405,16 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
       <Text style={[styles.stageName, { color: colors.text }]}>Business debt tracker</Text>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
+
+      {/* Prominent Outstanding Balance Banner */}
+      <View style={{ backgroundColor: colors.cardSecondary, padding: 16, borderRadius: 10, borderWidth: 1, borderColor: colors.border, marginVertical: 8 }}>
+        <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
+          Kabuuang Utang (Outstanding Balance)
+        </Text>
+        <Text style={{ fontSize: 26, fontWeight: "900", color: colors.error, marginTop: 4 }}>
+          {formatPhp(outstandingBalance)}
+        </Text>
+      </View>
 
       {/* Active debts */}
       <Text style={[styles.cardLabel, { marginTop: 8, marginBottom: 8, color: colors.textSecondary }]}>Mga Aktibong Utang</Text>
