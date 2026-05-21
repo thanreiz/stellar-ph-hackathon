@@ -152,7 +152,7 @@ describe("mobile demo configuration", () => {
     assertIncludes(source, "Tiwala Score");
     assertMatches(
       source,
-      /<BentoMetricCard\s+label="Limit"/,
+      /<BentoMetricCard\b[^>]*\blabel="Limit"/,
       "Expected the dashboard bento metric label to be exactly Limit.",
     );
     assertIncludes(source, "Tindahan Cash");
