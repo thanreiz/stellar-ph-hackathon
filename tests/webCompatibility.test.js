@@ -45,4 +45,12 @@ describe("web compatibility", () => {
     assert.match(source, /DEMO_TRANSACTION_HASH/);
     assert.match(source, /0819554161045c5e2ef2a629dbd10396d504f76862739ceebf8452addf6c9489/);
   });
+
+  it("keeps technical transaction hash language inside proof or validation details", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+
+    assert.match(source, /Transaction details/);
+    assert.match(source, /Sample Testnet TX/);
+    assert.match(source, /validateHash/);
+  });
 });

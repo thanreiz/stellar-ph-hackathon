@@ -82,8 +82,8 @@ describe("mobile demo configuration", () => {
     const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
     const storage = readFileSync(new URL("../services/storageService.js", import.meta.url), "utf8");
 
-    assert.match(source, /Log expense/);
-    assert.match(source, /Expense source/);
+    assert.match(source, /Log expense|I-record ang Gastos/);
+    assert.match(source, /Expense source|Pinambayad/);
     assert.match(source, /Cash/);
     assert.match(source, /GCash/);
     assert.match(source, /Maya/);
@@ -98,5 +98,53 @@ describe("mobile demo configuration", () => {
     assert.match(source, /displayLedger/);
     assert.match(source, /network\.isOffline \? \[\] : syncedLedger/);
     assert.match(source, /Online ledger hidden until internet returns/);
+  });
+
+  it("defines Division 1 Choice A polished mobile shell labels and icons", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+    const uiSource = readFileSync(new URL("../components/SariSyncUI.js", import.meta.url), "utf8");
+
+    assert.match(source, /label:\s*"Kaha"/);
+    assert.match(source, /label:\s*"Tracker"/);
+    assert.match(source, /label:\s*"Utang"/);
+    assert.match(source, /label:\s*"Proof"/);
+    assert.match(source, /icon:\s*"wallet"/);
+    assert.match(source, /icon:\s*"trend"/);
+    assert.match(source, /icon:\s*"loan"/);
+    assert.match(source, /icon:\s*"proof"/);
+    assert.match(uiSource, /function IconNav/);
+    assert.match(uiSource, /function AppIcon/);
+  });
+
+  it("uses polished Filipino metrics and expense card treatment for Choice A", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+    const uiSource = readFileSync(new URL("../components/SariSyncUI.js", import.meta.url), "utf8");
+
+    assert.match(source, /Benta Ngayon/);
+    assert.match(source, /Mga Gastos/);
+    assert.match(source, /Tiwala Score/);
+    assert.match(source, /Limit sa Utang/);
+    assert.match(source, /BentoMetricCard/);
+    assert.match(uiSource, /fontSize:\s*42/);
+    assert.match(uiSource, /expense/);
+  });
+
+  it("keeps proof details hidden behind a friendly document flow", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+
+    assert.match(source, /Proof hidden/);
+    assert.match(source, /Tap to view transaction details/);
+    assert.match(source, /Gumawa ng Dokumento/);
+    assert.match(source, /Proof center/);
+  });
+
+  it("uses friendly wallet connection copy while removing technical validation prompts", () => {
+    const source = readFileSync(new URL("../app/index.js", import.meta.url), "utf8");
+
+    assert.match(source, /Konek Wallet/);
+    assert.match(source, /I-konek ang wallet/);
+    assert.match(source, /records (are secured in the background|sa background)/);
+    assert.doesNotMatch(source, /I-Validate ang Stellar Invoice/);
+    assert.doesNotMatch(source, /I-paste ang transaction hash para i-verify sa Horizon Testnet/);
   });
 });
