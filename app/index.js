@@ -304,6 +304,41 @@ export default function KahaScreen() {
       try {
         const queue = await getPendingSyncQueue();
         if (queue.length === 0) {
+          // If online and there are no pending sales to sync, check if the on-chain profile is out of sync
+          const wallet = await getWalletConnection();
+          if (wallet && wallet.publicKey) {
+            const onChainProfile = await fetchOnChainProfile(wallet.publicKey);
+            const ledger = await getSyncedSalesLedger();
+            const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+            const localScore = calculateTiwalaScore(totalSyncedBenta);
+            const localLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+            const localOutstanding = await getOutstandingLoanBalance();
+
+            const needsSync = !onChainProfile ||
+              onChainProfile.score !== localScore ||
+              onChainProfile.loanLimit !== localLimit ||
+              onChainProfile.outstandingBalance !== localOutstanding;
+
+            if (needsSync) {
+              const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+              if (storeSecretKey) {
+                setIsSyncingOnChain(true);
+                try {
+                  setStatusMessage("Updating out-of-sync Trust Profile on-chain...");
+                  const syncResult = await syncProfileToChain(storeSecretKey, localScore, localLimit, localOutstanding);
+                  setOnChainScore(syncResult.confirmedScore);
+                  setOnChainLimit(syncResult.confirmedLimit);
+                  setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
+                  setStatusMessage("Trust Profile successfully synced to blockchain.");
+                } catch (sorobanError) {
+                  console.error("Soroban profile sync failed:", sorobanError);
+                  setStatusMessage(`Failed to sync profile: ${sorobanError.message}`);
+                } finally {
+                  setIsSyncingOnChain(false);
+                }
+              }
+            }
+          }
           await refreshLedger();
           return;
         }
@@ -349,7 +384,7 @@ export default function KahaScreen() {
     }
 
     syncWhenOnline();
-  }, [network.hasCheckedInitialStatus, network.isOffline, refreshLedger]);
+  }, [network.hasCheckedInitialStatus, network.isOffline, refreshLedger, walletConnection?.publicKey]);
 
   // 4-B: rage-click guard — disable before the first await
   async function handleAddBenta() {

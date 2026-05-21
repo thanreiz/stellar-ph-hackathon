@@ -4,8 +4,9 @@ const { Server } = rpc;
 const RPC_URL = 'https://soroban-testnet.stellar.org';
 const server = new Server(RPC_URL);
 
-const contractId = 'CDTWHZIFZ3EVFEJEFGCZD4WPHVKWTSJC3ON7BG77BNNCXXZNPY3Q7JB4';
-const storePublicKey = 'GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2';
+import 'dotenv/config';
+const contractId = process.env.EXPO_PUBLIC_SOROBAN_CONTRACT_ID;
+const storePublicKey = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY;
 
 async function testFetch() {
   console.log('Contract ID:', contractId);
@@ -31,7 +32,7 @@ async function testFetch() {
 
     const xdrStr = tx.toXDR();
     console.log('XDR String:', xdrStr);
-    const simResult = await server.simulateTransaction(xdrStr);
+    const simResult = await server.simulateTransaction(tx);
     if (simResult.error) {
       throw new Error(simResult.error);
     }
