@@ -1748,7 +1748,9 @@ function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isO
       <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{capabilities.message}</Text>
       <View style={styles.metricsGrid}>
         <MiniMetric label="Pending Sales records" value={String(summary.pendingBentaCount)} color={colors.primary} />
-        <MiniMetric label="Draft supplier invoices" value={String(summary.supplierInvoiceDraftCount)} color={colors.tertiary} />
+        {summary.supplierInvoiceDraftCount > 0 && (
+          <MiniMetric label="Draft supplier invoices" value={String(summary.supplierInvoiceDraftCount)} color={colors.tertiary} />
+        )}
         <MiniMetric label="Draft loan repayments" value={String(summary.repaymentDraftCount)} color={colors.error} />
       </View>
       <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary }]}>
