@@ -83,14 +83,14 @@ export default function ScannerScreen() {
   const loanLimit = getLoanLimitForStage(stage);
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
 
-  // Calculate Tindahan Cash
+  // Calculate Tindahan Cash = Total Synced Benta + PHPC Balance
+  // XLM is strictly a gas reserve and is never included in user-facing math.
   const tindahanCash = useMemo(() => {
     const benta = Number(totalSyncedBenta || 0);
-    const xlm = Number(xlmBalance || 0);
     const phpc = Number(phpcBalance || 0);
     const cashout = Number(cashOutTotal || 0);
-    return Math.max(0, benta + phpc + (xlm * XLM_TO_PHP_RATE) - cashout);
-  }, [totalSyncedBenta, xlmBalance, phpcBalance, cashOutTotal]);
+    return Math.max(0, benta + phpc - cashout);
+  }, [totalSyncedBenta, phpcBalance, cashOutTotal]);
 
   // Compute Total Bill Amount in PHP
   const totalAmountPhp = useMemo(() => {

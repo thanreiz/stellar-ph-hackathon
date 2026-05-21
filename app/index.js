@@ -118,12 +118,13 @@ const EXPENSE_PAYMENT_SOURCES = [
 const XLM_TO_PHP_RATE = 9.07;
 const USDC_TO_PHP_RATE = 61.45;
 
-function calculateTindahanCash(totalSyncedBenta, xlmBalance, phpcBalance, cashOutTotal = 0) {
+// Tindahan Cash = Total Synced Benta (offline ledger) + PHPC Balance (on-chain)
+// XLM is strictly a gas reserve and is never shown to the user.
+function calculateTindahanCash(totalSyncedBenta, phpcBalance, cashOutTotal = 0) {
   const benta = Number(totalSyncedBenta || 0);
-  const xlm = Number(xlmBalance || 0);
   const phpc = Number(phpcBalance || 0);
   const cashout = Number(cashOutTotal || 0);
-  return Math.max(0, benta + phpc + (xlm * XLM_TO_PHP_RATE) - cashout);
+  return Math.max(0, benta + phpc - cashout);
 }
 
 export default function KahaScreen() {
@@ -632,7 +633,7 @@ export default function KahaScreen() {
               Tindahan Cash (Wallet Balance)
             </Text>
             <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
-              {formatPhp(calculateTindahanCash(totalSyncedBenta, xlmBalance, phpcBalance, cashOutTotal))}
+              {formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance, cashOutTotal))}
             </Text>
           </View>
           <Pressable
@@ -667,22 +668,34 @@ export default function KahaScreen() {
 
         <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 12 }} />
 
-        {/* Transaction reserve / gas fee display */}
-        <View style={{ gap: 4 }}>
+        {/* Breakdown rows */}
+        <View style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              Pang-transaksyon (XLM Fee Reserve)
+              Total Synced Benta
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
-              {formatPhp(Number(xlmBalance) * XLM_TO_PHP_RATE)} ({Number(xlmBalance).toFixed(2)} XLM)
+              {formatPhp(totalSyncedBenta)}
             </Text>
           </View>
-          
-          <View style={{ marginTop: 4, backgroundColor: colors.cardSecondary, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: colors.border }}>
-            <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 15 }}>
-              ℹ️ Ang bawat transaksyon ay may maliit na bayad o 'pamasahe' sa network. Awtomatiko itong binabawas dito at hindi makakaapekto sa iyong Tindahan Cash.
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
+              PHPC Balance
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
+              {formatPhp(Number(phpcBalance))}
             </Text>
           </View>
+          {cashOutTotal > 0 && (
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
+                Cash Out (Na-withdraw)
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.error, fontWeight: "800" }}>
+                -{formatPhp(cashOutTotal)}
+              </Text>
+            </View>
+          )}
         </View>
       </View>
 
@@ -1132,7 +1145,7 @@ export default function KahaScreen() {
                     onPress={async () => {
                       setCashOutError("");
                       const amount = Number(cashOutAmount);
-                      const currentCash = calculateTindahanCash(totalSyncedBenta, xlmBalance, phpcBalance, cashOutTotal);
+                      const currentCash = calculateTindahanCash(totalSyncedBenta, phpcBalance, cashOutTotal);
                       if (isNaN(amount) || amount <= 0) {
                         setCashOutError("Paki-lagay ng wastong halaga.");
                         return;
