@@ -1426,6 +1426,26 @@ export default function KahaScreen() {
                           });
 
                           await refreshLedger();
+
+                          // Sync profile with Soroban smart contract on cashout
+                          const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+                          if (storeSecretKey && !network.isOffline) {
+                            try {
+                              const ledger = await getSyncedSalesLedger();
+                              const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+                              const currentScore = calculateTiwalaScore(totalSyncedBenta);
+                              const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+                              const currentOutstanding = await getOutstandingLoanBalance();
+
+                              const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, currentOutstanding);
+                              setOnChainScore(syncResult.confirmedScore);
+                              setOnChainLimit(syncResult.confirmedLimit);
+                              setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
+                            } catch (sorobanError) {
+                              console.error("Soroban profile sync failed during cash-out:", sorobanError);
+                            }
+                          }
+
                           setCashOutStep("success");
                         } catch (err) {
                           setCashOutError("Failed to save transaction: " + err.message);
