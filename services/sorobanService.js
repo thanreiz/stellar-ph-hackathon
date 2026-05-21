@@ -50,10 +50,17 @@ export async function fetchOnChainProfile(storePublicKey) {
     }
 
     const nativeVal = scValToNative(retval);
-    if (Array.isArray(nativeVal) && nativeVal.length >= 2) {
+    if (Array.isArray(nativeVal) && nativeVal.length >= 3) {
       return {
         score: Number(nativeVal[0]),
         loanLimit: Number(nativeVal[1]),
+        outstandingBalance: Number(nativeVal[2]),
+      };
+    } else if (Array.isArray(nativeVal) && nativeVal.length >= 2) {
+      return {
+        score: Number(nativeVal[0]),
+        loanLimit: Number(nativeVal[1]),
+        outstandingBalance: 0,
       };
     }
     
@@ -71,7 +78,7 @@ export async function fetchOnChainProfile(storePublicKey) {
  * Returns: { success: true, hash: string, confirmedScore: number, confirmedLimit: number }
  * Throws on submission error, terminal FAILED status, or polling timeout.
  */
-export async function syncProfileToChain(storeSecretKey, score, limit) {
+export async function syncProfileToChain(storeSecretKey, score, limit, outstandingBalance = 0) {
   const contractId = process.env.EXPO_PUBLIC_SOROBAN_CONTRACT_ID;
   if (!contractId) {
     throw new Error('EXPO_PUBLIC_SOROBAN_CONTRACT_ID is not configured.');
@@ -89,7 +96,8 @@ export async function syncProfileToChain(storeSecretKey, score, limit) {
     'update_profile',
     nativeToScVal(publicKey, { type: 'address' }),
     nativeToScVal(Number(score), { type: 'u32' }),
-    nativeToScVal(Number(limit), { type: 'u64' })
+    nativeToScVal(Number(limit), { type: 'u64' }),
+    nativeToScVal(Number(outstandingBalance), { type: 'u64' })
   );
 
   // 3. Build base transaction
@@ -144,6 +152,7 @@ export async function syncProfileToChain(storeSecretKey, score, limit) {
         hash: txHash,
         confirmedScore: Number(score),
         confirmedLimit: Number(limit),
+        confirmedOutstandingBalance: Number(outstandingBalance),
       };
     }
 

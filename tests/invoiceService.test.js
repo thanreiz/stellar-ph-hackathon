@@ -32,12 +32,12 @@ describe("supplier invoice QR parsing", () => {
 
   it("marks invoice as eligible only when USDC amount is within loan limit", () => {
     assert.deepEqual(
-      evaluateInvoiceEligibility({ amount_usdc: 50 }, CREDIT_STAGES.MICRO_SARI, 3500),
+      evaluateInvoiceEligibility({ amount_usdc: 50 }, CREDIT_STAGES.MICRO_SARI, 5000),
       { eligible: true, shortfall: 0 },
     );
     assert.deepEqual(
-      evaluateInvoiceEligibility({ amount_usdc: 5000 }, CREDIT_STAGES.MICRO_SARI, 3500),
-      { eligible: false, shortfall: 1500 },
+      evaluateInvoiceEligibility({ amount_usdc: 6000 }, CREDIT_STAGES.MICRO_SARI, 5000),
+      { eligible: false, shortfall: 1000 },
     );
   });
 });
@@ -47,8 +47,8 @@ describe("BR5 stage-drop debt lock", () => {
     const result = evaluateInvoiceEligibility(
       { amount_usdc: 50 },
       CREDIT_STAGES.MICRO_SARI,  // current stage (demoted)
-      3500,                       // new loan limit
-      4000,                       // outstandingBalance > loanLimit → locked
+      5000,                       // new loan limit
+      6000,                       // outstandingBalance > loanLimit → locked
       CREDIT_STAGES.CORNER_STORE, // lastStage — was Corner Store
     );
 
@@ -61,8 +61,8 @@ describe("BR5 stage-drop debt lock", () => {
     const result = evaluateInvoiceEligibility(
       { amount_usdc: 50 },
       CREDIT_STAGES.MICRO_SARI,  // current stage
-      3500,                       // new loan limit
-      3000,                       // outstandingBalance < loanLimit → NOT locked
+      5000,                       // new loan limit
+      4000,                       // outstandingBalance < loanLimit → NOT locked
       CREDIT_STAGES.CORNER_STORE, // lastStage
     );
 

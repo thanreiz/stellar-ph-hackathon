@@ -165,6 +165,7 @@ export default function KahaScreen() {
   const [offlineDrafts, setOfflineDrafts] = useState([]);
   const [onChainScore, setOnChainScore] = useState(null);
   const [onChainLimit, setOnChainLimit] = useState(null);
+  const [onChainOutstandingBalance, setOnChainOutstandingBalance] = useState(null);
   const [isSyncingOnChain, setIsSyncingOnChain] = useState(false);
   const [phpcBalance, setPhpcBalance] = useState("0.00");
   const [xlmBalance, setXlmBalance] = useState("0.0000");
@@ -190,6 +191,7 @@ export default function KahaScreen() {
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
   const displayScore = (!network.isOffline && onChainScore !== null) ? onChainScore : tiwalaScore;
   const displayLimit = (!network.isOffline && onChainLimit !== null) ? onChainLimit : loanLimit;
+  const displayOutstandingBalance = (!network.isOffline && onChainOutstandingBalance !== null) ? onChainOutstandingBalance : outstandingBalance;
   // 4-D: pass live receipts; falls back to SAMPLE_BUSINESS_TRANSACTIONS when empty
   const businessSnapshot = useMemo(
     () => getBusinessSnapshot(displayLedger, [...receipts, ...expenses]),
@@ -251,6 +253,7 @@ export default function KahaScreen() {
           if (profile) {
             setOnChainScore(profile.score);
             setOnChainLimit(profile.loanLimit);
+            setOnChainOutstandingBalance(profile.outstandingBalance);
           }
           if (balances) {
             setPhpcBalance(balances.phpc);
@@ -316,15 +319,17 @@ export default function KahaScreen() {
         const newScore = calculateTiwalaScore(totalSyncedBenta);
         const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
 
+        const currentOutstanding = await getOutstandingLoanBalance();
         const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
         if (storeSecretKey) {
           setIsSyncingOnChain(true);
           try {
             setStatusMessage("Syncing your Trust Profile to the secure network...");
-            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit);
+            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit, currentOutstanding);
             // 1. Eagerly push confirmed on-chain values the moment the tx finalises
             setOnChainScore(syncResult.confirmedScore);
             setOnChainLimit(syncResult.confirmedLimit);
+            setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
             setStatusMessage("Offline Sales and secure profile synced successfully.");
           } catch (sorobanError) {
             console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
@@ -374,13 +379,15 @@ export default function KahaScreen() {
             const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
             const newScore = calculateTiwalaScore(totalSyncedBenta);
             const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+            const currentOutstanding = await getOutstandingLoanBalance();
 
             setStatusMessage("Syncing your Trust Profile to the secure network...");
-            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit);
+            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit, currentOutstanding);
 
             // 1. Eagerly push confirmed on-chain values as soon as tx finalises on Soroban
             setOnChainScore(syncResult.confirmedScore);
             setOnChainLimit(syncResult.confirmedLimit);
+            setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
             setStatusMessage("Syncing live balances from the network...");
 
             // 2. Re-fetch verified contract state + updated XLM/PHPC balances (gas deducted)
@@ -495,7 +502,31 @@ export default function KahaScreen() {
       };
       await appendLoan(loanRecord);
       const current = await getOutstandingLoanBalance();
-      await setOutstandingLoanBalance(current + offer.amountPhpc);
+      const newOutstanding = current + offer.amountPhpc;
+      await setOutstandingLoanBalance(newOutstanding);
+
+      // Sync updated profile (including new outstanding balance) to the blockchain
+      const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+      if (storeSecretKey && !network.isOffline) {
+        setIsSyncingOnChain(true);
+        try {
+          const ledger = await getSyncedSalesLedger();
+          const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+          const currentScore = calculateTiwalaScore(totalSyncedBenta);
+          const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+
+          setStatusMessage("Syncing outstanding loan balance to the blockchain...");
+          const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, newOutstanding);
+          setOnChainScore(syncResult.confirmedScore);
+          setOnChainLimit(syncResult.confirmedLimit);
+          setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
+        } catch (sorobanError) {
+          console.error("Soroban sync failed for outstanding balance:", sorobanError);
+        } finally {
+          setIsSyncingOnChain(false);
+        }
+      }
+
       await refreshLedger();
       setStatusMessage(
         "✅ Received ₱" +
@@ -534,7 +565,31 @@ export default function KahaScreen() {
       if (!result.success) throw new Error(result.error);
       await updateLoanStatus(loan.id, "paid");
       const current = await getOutstandingLoanBalance();
-      await setOutstandingLoanBalance(Math.max(0, current - loan.amountPhpc));
+      const newOutstanding = Math.max(0, current - loan.amountPhpc);
+      await setOutstandingLoanBalance(newOutstanding);
+
+      // Sync updated profile (including new outstanding balance) to the blockchain
+      const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+      if (storeSecretKey) {
+        setIsSyncingOnChain(true);
+        try {
+          const ledger = await getSyncedSalesLedger();
+          const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+          const currentScore = calculateTiwalaScore(totalSyncedBenta);
+          const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+
+          setStatusMessage("Syncing outstanding loan balance to the blockchain...");
+          const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, newOutstanding);
+          setOnChainScore(syncResult.confirmedScore);
+          setOnChainLimit(syncResult.confirmedLimit);
+          setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
+        } catch (sorobanError) {
+          console.error("Soroban sync failed for outstanding balance:", sorobanError);
+        } finally {
+          setIsSyncingOnChain(false);
+        }
+      }
+
       await refreshLedger();
       setStatusMessage(
         "✅ Debt paid to " +
@@ -817,6 +872,7 @@ export default function KahaScreen() {
           onReceiveLoan={handleReceiveLoan}
           onOpenScanner={() => router.push("/scanner")}
           statusMessage={statusMessage}
+          outstandingBalance={displayOutstandingBalance}
         />
       ) : null}
       {activeSection === "Utang" ? (
@@ -825,7 +881,7 @@ export default function KahaScreen() {
           controlState={controlState}
           onRepayLoan={handleRepayLoan}
           statusMessage={statusMessage}
-          outstandingBalance={outstandingBalance}
+          outstandingBalance={displayOutstandingBalance}
         />
       ) : null}
       {activeSection === "Proof" ? (
@@ -1667,15 +1723,15 @@ function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit, onChainScore, 
   );
 }
 
-function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlState, onReceiveLoan, onOpenScanner, statusMessage }) {
+function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlState, onReceiveLoan, onOpenScanner, statusMessage, outstandingBalance }) {
   const { theme, colors } = useTheme();
   const isReadOnly = stage === CREDIT_STAGES.READ_ONLY;
   const [isRequesting, setIsRequesting] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState(null);
 
   const activeLoans = loans.filter(l => l.status === "active");
-  const loanCapital = activeLoans.reduce((s, l) => s + Number(l.amountPhpDisplay || 0), 0);
-  const availableLimit = Math.max(0, loanLimit - loanCapital);
+  const loanCapital = outstandingBalance;
+  const availableLimit = Math.max(0, loanLimit - outstandingBalance);
 
   async function handleRequest(offer) {
     setIsRequesting(true);

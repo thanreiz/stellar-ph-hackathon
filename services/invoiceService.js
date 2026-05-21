@@ -56,7 +56,7 @@ export function evaluateInvoiceEligibility(
       eligible: false,
       reason: 'BR5_STAGE_DROP_LOCK',
       message:
-        'Hindi pwede mag-utang muna. Babaan muna ang natitirang utang bago makakuha ng bagong financing.',
+        'Cannot request new financing. Please reduce your outstanding balance below the limit first.',
     };
   }
 

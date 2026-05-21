@@ -30,7 +30,7 @@ describe("credit ladder", () => {
     assert.equal(meta.id, 1);
     assert.equal(meta.name, "Micro-Sari (Starter)");
     assert.equal(meta.actionLabel, "Fund Upgrade");
-    assert.equal(getLoanLimitForStage(stage), 3500);
+    assert.equal(getLoanLimitForStage(stage), 5000);
   });
 
   it("moves stores above 30000 synced Benta into Stage 2", () => {
@@ -40,7 +40,7 @@ describe("credit ladder", () => {
     assert.equal(meta.id, 2);
     assert.equal(meta.name, "Corner Store (Growth)");
     assert.equal(meta.actionLabel, "Borrow shortfall");
-    assert.equal(getLoanLimitForStage(stage), 7500);
+    assert.equal(getLoanLimitForStage(stage), 8000);
   });
 
   // ── Loan limits ────────────────────────────────────────────────────────────

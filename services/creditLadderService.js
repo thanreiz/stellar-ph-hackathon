@@ -71,8 +71,8 @@ export function calculateTiwalaScore(totalSales) {
 export function getLoanLimitForStage(stage) {
   switch (stage) {
     case CREDIT_STAGES.READ_ONLY:    return 0;
-    case CREDIT_STAGES.MICRO_SARI:   return 3500;
-    case CREDIT_STAGES.CORNER_STORE: return 7500;
+    case CREDIT_STAGES.MICRO_SARI:   return 5000;
+    case CREDIT_STAGES.CORNER_STORE: return 8000;
     default: return 0;
   }
 }
