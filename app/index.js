@@ -66,6 +66,7 @@ import {
 import { generateReceiptDocument } from "../utils/documentGenerator";
 import { formatPhp, formatUsdc } from "../utils/formatters";
 import { useTheme } from "../context/ThemeContext";
+import { BentoMetricCard, IconNav } from "../components/SariSyncUI";
 
 // Lender accounts (generated via setupLiquidity + generateLenders scripts)
 const LENDER_OFFERS = [
@@ -93,7 +94,12 @@ const OFFLINE_WARNING = "Naka-Offline Mode. I-save muna sa phone.";
 const DEMO_TRANSACTION_HASH = "0819554161045c5e2ef2a629dbd10396d504f76862739ceebf8452addf6c9489";
 const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
 
-const NAV_ITEMS = ["Profile", "Tracker", "Debt", "Receipts"];
+const NAV_ITEMS = [
+  { id: "Kaha", label: "Kaha", icon: "wallet" },
+  { id: "Tracker", label: "Tracker", icon: "trend" },
+  { id: "Utang", label: "Utang", icon: "loan" },
+  { id: "Proof", label: "Proof", icon: "proof" },
+];
 const EXPENSE_PAYMENT_SOURCES = [
   { id: "cash", label: "Cash" },
   { id: "gcash", label: "GCash" },
@@ -136,7 +142,7 @@ export default function KahaScreen() {
   const [statusMessage, setStatusMessage] = useState("");
   const [documentStatusMessage, setDocumentStatusMessage] = useState("");
   const [activeRange, setActiveRange] = useState("week");
-  const [activeSection, setActiveSection] = useState("Profile");
+  const [activeSection, setActiveSection] = useState("Kaha");
   const [receipts, setReceipts] = useState([]); // 4-D: live receipts
   const [loans, setLoans] = useState([]); // microloan records
   const [offlineDrafts, setOfflineDrafts] = useState([]);
@@ -459,48 +465,17 @@ export default function KahaScreen() {
 
       {/* ─── BENTO GRID HERO (matches Stitch design) ─── */}
       <View style={styles.bentoHero}>
-        {/* Card 1: Tiwala Score + Limit sa Utang */}
-        <View style={[styles.bentoCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
-            <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>Tiwala Score</Text>
-            <Text style={{ fontSize: 16, color: "#2563EB" }}>✓</Text>
-          </View>
-          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
-            <Text style={{ fontSize: 26, fontWeight: "900", color: colors.primary }}>{tiwalaScore}</Text>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600" }}>/ 1000</Text>
-          </View>
-          {/* Progress bar */}
-          <View style={{ height: 6, width: "100%", backgroundColor: colors.border, borderRadius: 99, overflow: "hidden", marginTop: 10 }}>
-            <View style={{ height: "100%", width: `${Math.round((tiwalaScore / 1000) * 100)}%`, backgroundColor: colors.primary, borderRadius: 99 }} />
-          </View>
-          {/* Divider */}
-          <View style={{ height: 1, backgroundColor: colors.border, marginTop: 14, marginBottom: 10, opacity: 0.5 }} />
-          <Text style={{ fontSize: 10, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>Limit sa Utang</Text>
-          <Text style={{ fontSize: 18, fontWeight: "900", color: colors.text, marginTop: 2 }}>{formatPhp(loanLimit)}</Text>
+        <View style={styles.bentoMetricCell}>
+          <BentoMetricCard label="Benta Ngayon" value={formatPhp(salesToday)} tone="positive" />
         </View>
-
-        {/* Card 2: Daily Totals */}
-        <View style={[styles.bentoCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border, gap: 14 }]}>
-          {/* Benta Ngayong Araw */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: theme === "light" ? "#A6F8B4" : "#0d6f37", alignItems: "center", justifyContent: "center" }}>
-              <Text style={{ fontSize: 16 }}>💸</Text>
-            </View>
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.textSecondary }}>Benta Ngayong Araw</Text>
-              <Text style={{ fontSize: 16, fontWeight: "900", color: colors.primary }}>{formatPhp(salesToday)}</Text>
-            </View>
-          </View>
-          {/* Mga Gastos */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: theme === "light" ? "#FFE5E5" : "#3A1E1E", alignItems: "center", justifyContent: "center" }}>
-              <Text style={{ fontSize: 16 }}>🧾</Text>
-            </View>
-            <View>
-              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.textSecondary }}>Mga Gastos</Text>
-              <Text style={{ fontSize: 16, fontWeight: "900", color: colors.text }}>{formatPhp(expenseTotal)}</Text>
-            </View>
-          </View>
+        <View style={styles.bentoMetricCell}>
+          <BentoMetricCard label="Mga Gastos" value={formatPhp(expenseTotal)} tone="expense" />
+        </View>
+        <View style={styles.bentoMetricCell}>
+          <BentoMetricCard label="Tiwala Score" value={`${tiwalaScore}`} />
+        </View>
+        <View style={styles.bentoMetricCell}>
+          <BentoMetricCard label="Limit sa Utang" value={formatPhp(loanLimit)} tone="positive" />
         </View>
       </View>
 
@@ -644,31 +619,9 @@ export default function KahaScreen() {
         onSubmit={handleSubmitOfflineWork}
       />
 
-      <View style={styles.navGrid}>
-        {NAV_ITEMS.map((item) => (
-          <Pressable
-            key={item}
-            onPress={() => setActiveSection(item)}
-            style={[
-              styles.navButton,
-              { backgroundColor: colors.card, borderColor: colors.border },
-              activeSection === item && { backgroundColor: colors.primary, borderColor: colors.primary },
-            ]}
-          >
-            <Text
-              style={[
-                styles.navButtonText,
-                { color: colors.text },
-                activeSection === item && { color: theme === "light" ? "#FFFFFF" : "#111411" },
-              ]}
-            >
-              {item}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <IconNav items={NAV_ITEMS} activeId={activeSection} onSelect={setActiveSection} />
 
-      {activeSection === "Profile" ? (
+      {activeSection === "Kaha" ? (
         <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} />
       ) : null}
       {activeSection === "Tracker" ? (
@@ -684,7 +637,7 @@ export default function KahaScreen() {
           statusMessage={statusMessage}
         />
       ) : null}
-      {activeSection === "Debt" ? (
+      {activeSection === "Utang" ? (
         <DebtPanel
           loans={loans}
           controlState={controlState}
@@ -692,7 +645,7 @@ export default function KahaScreen() {
           statusMessage={statusMessage}
         />
       ) : null}
-      {activeSection === "Receipts" ? (
+      {activeSection === "Proof" ? (
         <ReceiptsPanel
           receipts={receipts}
           loans={loans}
@@ -1442,16 +1395,14 @@ const styles = StyleSheet.create({
   },
   bentoHero: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 12,
     marginVertical: 12,
   },
-  bentoCard: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 16,
-    padding: 16,
-    minHeight: 160,
-    justifyContent: "center",
+  bentoMetricCell: {
+    flexBasis: "48%",
+    flexGrow: 1,
+    minWidth: 150,
   },
   scanCta: {
     flexDirection: "row",
@@ -1642,32 +1593,6 @@ const styles = StyleSheet.create({
   lockText: {
     color: "#6E766F",
     fontWeight: "800",
-  },
-  navGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  navButton: {
-    width: "48%",
-    minHeight: 48,
-    borderRadius: 8,
-    borderColor: "#D4CEC1",
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#FFFFFF",
-  },
-  navButtonActive: {
-    backgroundColor: "#17231D",
-    borderColor: "#17231D",
-  },
-  navButtonText: {
-    color: "#17231D",
-    fontWeight: "900",
-  },
-  navButtonTextActive: {
-    color: "#FFFFFF",
   },
   rangeRow: {
     flexDirection: "row",
