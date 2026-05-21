@@ -73,7 +73,7 @@ import { generateReceiptDocument } from "../utils/documentGenerator";
 import { formatPhp, formatUsdc } from "../utils/formatters";
 import { useTheme } from "../context/ThemeContext";
 import { useAppContext } from "../context/AppContext";
-import { BentoMetricCard, IconNav, ProofHint } from "../components/SariSyncUI";
+import { BentoMetricCard, IconNav, ProofHint, QuickAction } from "../components/SariSyncUI";
 
 // Lender accounts (generated via setupLiquidity + generateLenders scripts)
 const LENDER_OFFERS = [
@@ -102,9 +102,9 @@ const DEMO_TRANSACTION_HASH = "0819554161045c5e2ef2a629dbd10396d504f76862739ceeb
 const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
 
 const NAV_ITEMS = [
-  { id: "Kaha", label: "Cash", icon: "wallet" },
+  { id: "Kaha", label: "Kaha", icon: "wallet" },
   { id: "Tracker", label: "Tracker", icon: "trend" },
-  { id: "Utang", label: "Debt", icon: "loan" },
+  { id: "Utang", label: "Utang", icon: "loan" },
   { id: "Proof", label: "Proof", icon: "proof" },
 ];
 const EXPENSE_PAYMENT_SOURCES = [
@@ -712,43 +712,13 @@ export default function KahaScreen() {
 
       {/* ─── WALLET BALANCE CARD ─── */}
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, borderRadius: 24 }]}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Tindahan Cash (Wallet Balance)
-            </Text>
-            <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
-              {formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
-            </Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            disabled={network.isOffline}
-            onPress={() => {
-              setCashOutAmount("");
-              setCashOutStep("form");
-              setCashOutError("");
-              setCashOutTxHash("");
-              setSimPhoneNumber("");
-              setSimOtp("");
-              setIsCashOutModalVisible(true);
-            }}
-            style={({ pressed }) => [
-              {
-                paddingVertical: 8,
-                paddingHorizontal: 16,
-                borderRadius: 99,
-                backgroundColor: network.isOffline ? colors.border : colors.primary,
-                alignItems: "center",
-                justifyContent: "center",
-              },
-              pressed && !network.isOffline && styles.pressed,
-            ]}
-          >
-            <Text style={{ fontSize: 13, fontWeight: "800", color: network.isOffline ? colors.textSecondary : colors.buttonTextOnPrimary }}>
-              {network.isOffline ? "Offline" : "Cash Out 💸"}
-            </Text>
-          </Pressable>
+        <View>
+          <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Tindahan Cash (Wallet Balance)
+          </Text>
+          <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
+            {formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
+          </Text>
         </View>
 
         <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 12 }} />
@@ -782,16 +752,16 @@ export default function KahaScreen() {
       {/* ─── BENTO GRID HERO (matches Stitch design) ─── */}
       <View style={styles.bentoHero}>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Sales Today" value={formatPhp(salesToday)} tone="positive" />
+          <BentoMetricCard label="Benta" value={formatPhp(salesToday)} tone="positive" />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Expenses" value={formatPhp(expenseTotal)} tone="expense" />
+          <BentoMetricCard label="Gastos" value={formatPhp(expenseTotal)} tone="expense" />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Trust Score" value={`${displayScore}`} />
+          <BentoMetricCard label="Tiwala Score" value={`${displayScore}`} />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Credit Limit" value={formatPhp(displayLimit)} tone="positive" />
+          <BentoMetricCard label="Limit" value={formatPhp(displayLimit)} tone="positive" />
         </View>
       </View>
 
@@ -837,43 +807,35 @@ export default function KahaScreen() {
         </Text>
       </View>
 
-
-      {/* ─── QUICK ACTION FINANCING BUTTON ─── */}
-      <View style={{ gap: 8, marginTop: -4, marginBottom: 4 }}>
-        <Pressable
-          accessibilityRole="button"
-          disabled={stage === CREDIT_STAGES.READ_ONLY}
-          onPress={() => router.push("/scanner")}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            { backgroundColor: colors.primary },
-            pressed && stage !== CREDIT_STAGES.READ_ONLY && styles.pressed,
-            stage === CREDIT_STAGES.READ_ONLY && styles.disabledButton,
-          ]}
-        >
-          <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-            {stageMeta.actionLabel}
-          </Text>
-        </Pressable>
-      </View>
-
-      <View style={{ gap: 8, marginTop: 4, marginBottom: 12 }}>
-        <Pressable
-          accessibilityRole="button"
+      <View style={styles.quickActionRow}>
+        <QuickAction
+          label="Record"
+          helper="Benta / Gastos"
           onPress={() => {
             setStatusMessage("");
             setIsRecordModalVisible(true);
           }}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            { backgroundColor: colors.primary },
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-            Record Sales / Expenses
-          </Text>
-        </Pressable>
+        />
+        <QuickAction
+          label="Cash Out"
+          helper={network.isOffline ? "Offline" : "To GCash/Maya"}
+          disabled={network.isOffline}
+          onPress={() => {
+            setCashOutAmount("");
+            setCashOutStep("form");
+            setCashOutError("");
+            setCashOutTxHash("");
+            setSimPhoneNumber("");
+            setSimOtp("");
+            setIsCashOutModalVisible(true);
+          }}
+        />
+        <QuickAction
+          label="Pay Supplier"
+          helper={stage === CREDIT_STAGES.READ_ONLY ? "Locked" : "Invoice"}
+          disabled={stage === CREDIT_STAGES.READ_ONLY}
+          onPress={() => router.push("/scanner")}
+        />
       </View>
 
       {network.isOffline ? (
@@ -936,7 +898,7 @@ export default function KahaScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-            <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 16 }]}>Record Transaction</Text>
+            <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 16 }]}>Record</Text>
 
             {/* Tab Selector */}
             <View style={[styles.rangeRow, { marginBottom: 16 }]}>
@@ -958,7 +920,7 @@ export default function KahaScreen() {
                     activeRecordTab === "benta" && { color: theme === "light" ? "#FFFFFF" : "#111411" }
                   ]}
                 >
-                  Sales (Inflow)
+                  Benta
                 </Text>
               </Pressable>
               <Pressable
@@ -979,7 +941,7 @@ export default function KahaScreen() {
                     activeRecordTab === "gastos" && { color: theme === "light" ? "#FFFFFF" : "#111411" }
                   ]}
                 >
-                  Expenses (Outflow)
+                  Gastos
                 </Text>
               </Pressable>
             </View>
@@ -987,7 +949,7 @@ export default function KahaScreen() {
             {/* Form Fields based on Active Tab */}
             {activeRecordTab === "benta" ? (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Log Daily Sales</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Halaga</Text>
                 <TextInput
                   value={bentaAmount}
                   onChangeText={setBentaAmount}
@@ -1008,13 +970,13 @@ export default function KahaScreen() {
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    {isSavingBenta ? "Saving..." : "Save Sales"}
+                    {isSavingBenta ? "Saving..." : "Save Benta"}
                   </Text>
                 </Pressable>
               </View>
             ) : (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Record Expenses</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Halaga</Text>
                 <TextInput
                   value={expenseAmount}
                   onChangeText={setExpenseAmount}
@@ -1023,7 +985,7 @@ export default function KahaScreen() {
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
-                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Payment Method</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Pinambayad</Text>
                 <View style={[styles.rangeRow, { flexWrap: "wrap", gap: 6 }]}>
                   {EXPENSE_PAYMENT_SOURCES.map((source) => (
                     <Pressable
@@ -1058,7 +1020,7 @@ export default function KahaScreen() {
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    Save Expense
+                    Save Gastos
                   </Text>
                 </Pressable>
               </View>
@@ -2298,6 +2260,13 @@ const styles = StyleSheet.create({
     flexBasis: "48%",
     flexGrow: 1,
     minWidth: 150,
+  },
+  quickActionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 8,
+    marginTop: -2,
   },
   scanCta: {
     flexDirection: "row",
