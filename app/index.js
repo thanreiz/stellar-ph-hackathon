@@ -63,6 +63,7 @@ import {
   repayLoan,
   validateStellarTransaction,
 } from "../services/stellarService";
+import { fetchOnChainProfile, syncProfileToChain } from "../services/sorobanService";
 import { generateReceiptDocument } from "../utils/documentGenerator";
 import { formatPhp, formatUsdc } from "../utils/formatters";
 import { useTheme } from "../context/ThemeContext";
@@ -146,6 +147,9 @@ export default function KahaScreen() {
   const [receipts, setReceipts] = useState([]); // 4-D: live receipts
   const [loans, setLoans] = useState([]); // microloan records
   const [offlineDrafts, setOfflineDrafts] = useState([]);
+  const [onChainScore, setOnChainScore] = useState(null);
+  const [onChainLimit, setOnChainLimit] = useState(null);
+  const [isSyncingOnChain, setIsSyncingOnChain] = useState(false);
 
   const displayLedger = network.isOffline ? [] : syncedLedger;
   const totalSyncedBenta = useMemo(
@@ -200,7 +204,22 @@ export default function KahaScreen() {
     setOfflineDrafts(drafts);
     setExpenses(expenseRecords);
     setIsLedgerReady(true);
-  }, []);
+
+    if (!network.isOffline) {
+      try {
+        const wallet = await getWalletConnection();
+        if (wallet && wallet.publicKey) {
+          const profile = await fetchOnChainProfile(wallet.publicKey);
+          if (profile) {
+            setOnChainScore(profile.score);
+            setOnChainLimit(profile.loanLimit);
+          }
+        }
+      } catch (err) {
+        console.error("[SorobanService] Failed to fetch profile in refreshLedger:", err);
+      }
+    }
+  }, [network.isOffline]);
 
   useFocusEffect(
     useCallback(() => {
@@ -230,8 +249,28 @@ export default function KahaScreen() {
         }
 
         await syncPendingSalesQueue();
+
+        // Recalculate score and limit and sync to Stellar contract
+        const ledger = await getSyncedSalesLedger();
+        const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+        const newScore = calculateTiwalaScore(totalSyncedBenta);
+        const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+
+        const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+        if (storeSecretKey) {
+          try {
+            setStatusMessage("Sini-sync ang Tiwala Score sa Stellar chain...");
+            await syncProfileToChain(storeSecretKey, newScore, newLimit);
+            setStatusMessage("Na-sync ang offline Benta at on-chain score.");
+          } catch (sorobanError) {
+            console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
+            setStatusMessage(`Na-sync ang offline Benta, ngunit bigo ang on-chain sync: ${sorobanError.message}`);
+          }
+        } else {
+          setStatusMessage("Na-sync ang offline Benta records.");
+        }
+
         await refreshLedger();
-        setStatusMessage("Na-sync ang offline Benta records.");
       } catch (error) {
         setStatusMessage(error.message);
       }
@@ -257,6 +296,35 @@ export default function KahaScreen() {
         const ledger = await appendToSyncedSalesLedger([payload]);
         setSyncedLedger(ledger);
         setStatusMessage("Na-save ang Benta sa synced ledger.");
+
+        const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+        if (storeSecretKey) {
+          setIsSyncingOnChain(true);
+          try {
+            const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+            const newScore = calculateTiwalaScore(totalSyncedBenta);
+            const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+            
+            setStatusMessage("Sini-sync ang Tiwala Score sa Stellar chain...");
+            await syncProfileToChain(storeSecretKey, newScore, newLimit);
+            setStatusMessage("Na-save ang Benta at na-sync sa on-chain profile!");
+            
+            // Re-fetch the on-chain profile to update UI states
+            const wallet = await getWalletConnection();
+            if (wallet && wallet.publicKey) {
+              const profile = await fetchOnChainProfile(wallet.publicKey);
+              if (profile) {
+                setOnChainScore(profile.score);
+                setOnChainLimit(profile.loanLimit);
+              }
+            }
+          } catch (sorobanError) {
+            console.error("Soroban sync failed:", sorobanError);
+            setStatusMessage(`Na-save ang benta, ngunit bigo ang on-chain sync: ${sorobanError.message}`);
+          } finally {
+            setIsSyncingOnChain(false);
+          }
+        }
       }
 
       setBentaAmount("");
@@ -458,10 +526,61 @@ export default function KahaScreen() {
         </Pressable>
       </View>
 
-      {/* Wallet pill */}
-      <Text style={[styles.walletPill, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}>
-        Freighter connected · {walletConnection.publicKey.slice(0, 8)}...{walletConnection.publicKey.slice(-6)}
-      </Text>
+      {/* Wallet pill and On-chain badge */}
+      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 6, marginBottom: 12 }}>
+        <Text style={[styles.walletPill, { marginTop: 0, backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}>
+          Freighter connected · {walletConnection.publicKey.slice(0, 8)}...{walletConnection.publicKey.slice(-6)}
+        </Text>
+        {network.isOffline ? (
+          <View style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 8,
+            backgroundColor: colors.cardSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}>
+            <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
+              🛡️ On-chain: Offline
+            </Text>
+          </View>
+        ) : onChainScore !== null ? (
+          <View style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 8,
+            backgroundColor: theme === "light" ? "#E8F5E9" : "#1B5E20",
+            borderWidth: 1,
+            borderColor: theme === "light" ? "#A5D6A7" : "#2E7D32",
+          }}>
+            <Text style={{ fontSize: 12, fontWeight: "800", color: theme === "light" ? "#2E7D32" : "#E8F5E9" }}>
+              🛡️ On-chain Score: {onChainScore} (Limit: ₱{onChainLimit})
+            </Text>
+          </View>
+        ) : (
+          <View style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
+            borderRadius: 8,
+            backgroundColor: colors.cardSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}>
+            <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
+              🛡️ On-chain: Connecting...
+            </Text>
+          </View>
+        )}
+      </View>
 
       {/* ─── BENTO GRID HERO (matches Stitch design) ─── */}
       <View style={styles.bentoHero}>
@@ -622,7 +741,7 @@ export default function KahaScreen() {
       <IconNav items={NAV_ITEMS} activeId={activeSection} onSelect={setActiveSection} />
 
       {activeSection === "Kaha" ? (
-        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} />
+        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} onChainScore={onChainScore} onChainLimit={onChainLimit} />
       ) : null}
       {activeSection === "Tracker" ? (
         <TrackerPanel
@@ -915,7 +1034,7 @@ function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isO
   );
 }
 
-function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit }) {
+function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit, onChainScore, onChainLimit }) {
   const { colors } = useTheme();
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -923,8 +1042,8 @@ function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit }) {
       <Text style={[styles.stageName, { color: colors.text }]}>Store Settings</Text>
       <InfoRow label="Store type" value="Sari-sari inventory business" />
       <InfoRow label="Stage" value={stageMeta.name} />
-      <InfoRow label="Tiwala Score" value={String(tiwalaScore)} />
-      <InfoRow label="Loan limit" value={formatPhp(loanLimit)} />
+      <InfoRow label="Tiwala Score" value={`${tiwalaScore}${onChainScore !== null ? ` (🔗 On-chain: ${onChainScore})` : ""}`} />
+      <InfoRow label="Loan limit" value={`${formatPhp(loanLimit)}${onChainLimit !== null ? ` (🔗 On-chain: ₱${onChainLimit})` : ""}`} />
     </View>
   );
 }
