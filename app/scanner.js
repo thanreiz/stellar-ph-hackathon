@@ -1,6 +1,6 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useFocusEffect } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect, router } from "expo-router";
+import { useCallback, useMemo, useState, useRef, useEffect } from "react";
 import {
   Modal,
   Pressable,
@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
   View,
+  Animated,
 } from "react-native";
 import useNetworkStatus from "../hooks/useNetworkStatus";
 import {
@@ -33,22 +34,25 @@ import {
 } from "../services/offlineDraftService";
 import { submitInventoryFinancingSettlement } from "../services/stellarService";
 import { formatPhp, formatPublicKey, formatUsdc } from "../utils/formatters";
+import { useTheme } from "../context/ThemeContext";
 
-const SETTLED_COLOR = "#34C759";
-const SHORTAGE_COLOR = "#FF3B30";
 
 export default function ScannerScreen() {
+  const { theme, toggleTheme, colors } = useTheme();
   const network = useNetworkStatus();
   const [permission, requestPermission] = useCameraPermissions();
   const [totalSyncedBenta, setTotalSyncedBenta] = useState(0);
   const [invoice, setInvoice] = useState(null);
   const [scanError, setScanError] = useState("");
   const [scanned, setScanned] = useState(false);
-  const [isSettling, setIsSettling] = useState(false); // 4-B: rage-click guard (already existed)
+  const [isSettling, setIsSettling] = useState(false); // 4-B: rage-click guard
   const [settlementResult, setSettlementResult] = useState(null);
   const [draftMessage, setDraftMessage] = useState("");
   const [showQrError, setShowQrError] = useState(false); // 4-C: QR error modal state
   const [mockQrPayload, setMockQrPayload] = useState("");
+
+  // Flow steps for the presentation flow: "scan" | "detail" | "success"
+  const [currentStep, setCurrentStep] = useState("scan");
 
   const stage = useMemo(() => evaluateCreditStage(totalSyncedBenta), [totalSyncedBenta]);
   const stageMeta = getStageMetadata(stage);
@@ -67,6 +71,35 @@ export default function ScannerScreen() {
     }, []),
   );
 
+  // Laser pulsing and translation animation
+  const laserAnim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    let animation;
+    if (currentStep === "scan" && permission?.granted && !scanned) {
+      laserAnim.setValue(0);
+      animation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(laserAnim, {
+            toValue: 238,
+            duration: 2500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(laserAnim, {
+            toValue: 0,
+            duration: 2500,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      animation.start();
+    } else {
+      laserAnim.setValue(0);
+    }
+    return () => {
+      if (animation) animation.stop();
+    };
+  }, [currentStep, permission, scanned]);
+
   function handleBarcodeScanned(event) {
     if (scanned) return;
 
@@ -78,15 +111,14 @@ export default function ScannerScreen() {
       const parsedInvoice = parseSupplierInvoiceQr(event.data);
       setInvoice(parsedInvoice);
       setScanError("");
+      setCurrentStep("detail");
     } catch (error) {
       setInvoice(null);
       setScanError(error.message);
-      // 4-C: show "Mali ang QR Code" modal on parse failure
       setShowQrError(true);
     }
   }
 
-  // 4-B: rage-click guard — isSettling is set synchronously before the first await
   async function handleSettleInvoice() {
     if (!invoice || !eligibility.eligible) return;
     if (isSettling) return;
@@ -105,17 +137,18 @@ export default function ScannerScreen() {
           supplierPubkey: invoice.supplier_pubkey,
         }));
         setDraftMessage("Saved supplier invoice draft. Submit when online.");
-        return;
-      }
+        setCurrentStep("success");
+      } else {
+        const result = await submitInventoryFinancingSettlement({
+          invoiceId: "INV-2024-089",
+          amountUsdc: invoice.amount_usdc,
+          supplierPubkey: invoice.supplier_pubkey,
+        });
 
-      const result = await submitInventoryFinancingSettlement({
-        supplierPubkey: invoice.supplier_pubkey,
-        amountUsdc: invoice.amount_usdc.toFixed(7),
-        sendMaxPhpc: loanLimit.toFixed(7),
-      });
+        if (!result.success) {
+          throw new Error(result.error || "Horizon submission failed");
+        }
 
-      // 4-D: append live receipt on successful settlement
-      if (result.success) {
         await appendReceipt({
           id: result.transactionHash,
           type: 'FINANCING',
@@ -124,396 +157,673 @@ export default function ScannerScreen() {
           txHash: result.transactionHash,
           timestamp: Date.now(),
         });
-      }
 
-      setSettlementResult(result);
+        setSettlementResult(result);
+        setCurrentStep("success");
+      }
+    } catch (e) {
+      setScanError(e.message);
     } finally {
       setIsSettling(false);
     }
   }
 
-  // 4-D: Truncated hash for "Bayad Na" display
-  const shortHash = settlementResult?.success && settlementResult.transactionHash
-    ? `${settlementResult.transactionHash.slice(0, 6)}...${settlementResult.transactionHash.slice(-6)}`
-    : null;
+  const totalAmountPhp = invoice ? invoice.amount_usdc * 52 : 0;
+  const creditLineApproved = invoice ? Math.min(totalAmountPhp, loanLimit) : 0;
+  const ownerCashRequired = invoice ? Math.max(0, totalAmountPhp - loanLimit) : 0;
+  const fundingProgressPercent = totalAmountPhp > 0 ? Math.round((creditLineApproved / totalAmountPhp) * 100) : 100;
 
-  return (
-    <ScrollView contentContainerStyle={styles.screen}>
-      {/* 4-C: "Mali ang QR Code" error modal — resets camera on dismiss */}
-      <Modal visible={showQrError} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.errorModal}>
-            <Text style={styles.errorTitle}>Mali ang QR Code</Text>
-            <Text style={styles.errorBody}>
-              I-check ang QR code ng supplier at subukan ulit.
+  // STEP 1: CAMERA SCAN SCREEN
+  if (currentStep === "scan") {
+    return (
+      <View style={[styles.mainContainer, { backgroundColor: colors.background }]}>
+        {/* Top App Bar */}
+        <View style={[styles.headerBar, { borderBottomColor: colors.border }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <Pressable style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]} onPress={() => router.back()}>
+              <Text style={{ fontSize: 20, fontWeight: "900", color: colors.primary }}>✕</Text>
+            </Pressable>
+            <Text style={[styles.headerTitle, { color: colors.primary }]}>Invoice Scanner</Text>
+          </View>
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <Pressable style={styles.iconButton} onPress={() => alert("Flashlight toggled!")}>
+              <Text style={{ fontSize: 16 }}>🔦</Text>
+            </Pressable>
+            <Pressable style={styles.iconButton} onPress={toggleTheme}>
+              <Text style={{ fontSize: 16 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Main Viewport (Camera simulation / active feed) */}
+        <View style={styles.cameraViewport}>
+          {!permission ? (
+            <View style={[StyleSheet.absoluteFill, { justifyContent: "center", alignItems: "center" }]}>
+              <Text style={{ color: colors.textSecondary }}>Checking camera permission...</Text>
+            </View>
+          ) : !permission.granted ? (
+            <View style={[StyleSheet.absoluteFill, { justifyContent: "center", alignItems: "center", padding: 24, gap: 12 }]}>
+              <Text style={{ color: colors.textSecondary, textAlign: "center" }}>Camera access is needed to scan supplier invoice QR codes.</Text>
+              <Pressable
+                style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.primary, borderRadius: 99, width: 200 }, pressed && styles.pressed]}
+                onPress={requestPermission}
+              >
+                <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Enable Camera</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <CameraView
+              style={StyleSheet.absoluteFill}
+              facing="back"
+              barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+              onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+            />
+          )}
+
+          {/* Translucent overlay mask */}
+          <View style={styles.viewportMask}>
+            {/* Target Window Frame */}
+            <View style={styles.focusedFrame}>
+              <View style={[styles.scannerCorner, styles.cornerTL]} />
+              <View style={[styles.scannerCorner, styles.cornerTR]} />
+              <View style={[styles.scannerCorner, styles.cornerBL]} />
+              <View style={[styles.scannerCorner, styles.cornerBR]} />
+
+              {/* Bouncing laser line */}
+              {permission?.granted && !scanned ? (
+                <Animated.View style={[styles.laserLine, { transform: [{ translateY: laserAnim }] }]} />
+              ) : null}
+            </View>
+          </View>
+
+          {/* Floating instructions overlay */}
+          <View style={styles.floatingHelper}>
+            <Text style={styles.floatingText}>Itapat ang camera sa QR code o JSON ng supplier invoice.</Text>
+            <View style={styles.statusBadge}>
+              <View style={styles.statusDot} />
+              <Text style={styles.statusText}>Ready to Scan</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Elevated bottom sheet card controls */}
+        <ScrollView style={[styles.bottomControlCard, { backgroundColor: colors.card, borderTopColor: colors.border }]} contentContainerStyle={{ paddingBottom: 24 }}>
+          <View style={{ gap: 12 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary }}>Manual JSON Input (Demo Fallback)</Text>
+              <Text style={{ fontSize: 14 }}>❓</Text>
+            </View>
+            <TextInput
+              value={mockQrPayload}
+              onChangeText={setMockQrPayload}
+              placeholder='{"supplier_pubkey":"G...", "amount_usdc": 100}'
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              numberOfLines={2}
+              style={[styles.input, { height: 56, textAlignVertical: "top", paddingTop: 8, backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
+            />
+            <View style={{ gap: 8 }}>
+              <Pressable
+                style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.primary, borderRadius: 99 }, pressed && styles.pressed]}
+                onPress={() => {
+                  if (!mockQrPayload.trim()) return;
+                  try {
+                    const parsedInvoice = parseSupplierInvoiceQr(mockQrPayload.trim());
+                    setInvoice(parsedInvoice);
+                    setScanError("");
+                    setScanned(true);
+                    setDraftMessage("");
+                    setCurrentStep("detail");
+                  } catch (error) {
+                    setScanError(error.message);
+                    setShowQrError(true);
+                  }
+                }}
+              >
+                <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Simulate QR Scan</Text>
+              </Pressable>
+
+              <Pressable
+                style={({ pressed }) => [styles.secondaryButton, { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99 }, pressed && styles.pressed]}
+                onPress={() => {
+                  setScanned(false);
+                  setScanError("");
+                  setInvoice(null);
+                  setShowQrError(false);
+                }}
+              >
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>I-validate ang Stellar Invoice</Text>
+              </Pressable>
+            </View>
+
+            <Text style={{ textAlign: "center", fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>
+              ℹ️ Ligtas at naka-encrypt ang lahat ng data sa Stellar Ledger.
             </Text>
-            <Pressable
-              style={styles.errorButton}
-              onPress={() => {
-                setShowQrError(false);
-                setScanned(false); // 4-C: reactivates the camera
-              }}
-            >
-              <Text style={styles.errorButtonText}>OK</Text>
-            </Pressable>
+
+            {scanError && !showQrError ? (
+              <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
+                <Text style={[styles.errorText, { color: colors.error }]}>{scanError}</Text>
+              </View>
+            ) : null}
           </View>
-        </View>
-      </Modal>
+        </ScrollView>
 
-      <View style={styles.header}>
-        <Text style={styles.eyebrow}>B2B supplier invoice</Text>
-        <Text style={styles.title}>Scanner</Text>
-        <Text style={styles.subtitle}>
-          {network.isOffline
-            ? "Scan QR and save a local supplier invoice draft until Wi-Fi returns."
-            : "Scan QR, review inventory financing eligibility, then settle on Stellar Testnet."}
-        </Text>
-      </View>
-
-      <View style={styles.cameraShell}>
-        {!permission ? (
-          <Text style={styles.bodyText}>Checking camera permission...</Text>
-        ) : !permission.granted ? (
-          <View style={styles.permissionCard}>
-            <Text style={styles.bodyText}>Camera access is needed to scan supplier invoice QR codes.</Text>
-            <Pressable style={styles.primaryButton} onPress={requestPermission}>
-              <Text style={styles.primaryButtonText}>Enable Camera</Text>
-            </Pressable>
+        {/* Mali ang QR Code Modal */}
+        <Modal visible={showQrError} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.errorModal, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+              <Text style={[styles.errorTitle, { color: colors.error }]}>Mali ang QR Code</Text>
+              <Text style={[styles.errorBody, { color: colors.textSecondary }]}>
+                I-check ang QR code ng supplier at subukan ulit.
+              </Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.errorButton,
+                  { backgroundColor: colors.primary, minHeight: 48, justifyContent: "center", borderRadius: 8 },
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => {
+                  setShowQrError(false);
+                  setScanned(false);
+                }}
+              >
+                <Text style={[styles.errorButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>OK</Text>
+              </Pressable>
+            </View>
           </View>
-        ) : (
-          <CameraView
-            style={styles.camera}
-            facing="back"
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-            onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
-          />
-        )}
+        </Modal>
       </View>
+    );
+  }
 
-      <Pressable
-        style={styles.secondaryButton}
-        onPress={() => {
-          setScanned(false); // 4-C: explicit camera reset
-          setScanError("");
-          setSettlementResult(null);
-          setShowQrError(false);
-        }}
-      >
-        <Text style={styles.secondaryButtonText}>Scan Again</Text>
-      </Pressable>
-
-      {/* Manual JSON input for phone-demo fallback */}
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Manual JSON Input (Demo Fallback)</Text>
-        <Text style={[styles.bodyText, { marginBottom: 8 }]}>
-          If QR scanning is unavailable during the phone demo, paste the QR JSON payload below:
-        </Text>
-        <TextInput
-          value={mockQrPayload}
-          onChangeText={setMockQrPayload}
-          placeholder='{"supplier_pubkey":"G...", "amount_usdc": 5}'
-          placeholderTextColor="#918A7F"
-          multiline
-          numberOfLines={2}
-          style={[styles.input, { height: 60, marginVertical: 8, textAlignVertical: "top", paddingTop: 8 }]}
-        />
-        <Pressable
-          style={styles.primaryButton}
-          onPress={() => {
-            if (!mockQrPayload.trim()) return;
-            try {
-              const parsedInvoice = parseSupplierInvoiceQr(mockQrPayload.trim());
-              setInvoice(parsedInvoice);
-              setScanError("");
-              setScanned(true);
-              setDraftMessage("");
-            } catch (error) {
-              setScanError(error.message);
-            }
-          }}
-        >
-          <Text style={styles.primaryButtonText}>Simulate QR Scan</Text>
-        </Pressable>
-      </View>
-
-      {scanError && !showQrError ? (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorText}>{scanError}</Text>
+  // STEP 2: INVOICE SETTLEMENT DETAILS SCREEN
+  if (currentStep === "detail") {
+    return (
+      <View style={[styles.mainContainer, { backgroundColor: colors.background }]}>
+        {/* Top App Bar */}
+        <View style={[styles.headerBar, { borderBottomColor: colors.border }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <Pressable style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]} onPress={() => setCurrentStep("scan")}>
+              <Text style={{ fontSize: 22, color: colors.primary }}>←</Text>
+            </Pressable>
+            <Text style={[styles.headerTitle, { color: colors.primary }]}>SariSync Ledger</Text>
+          </View>
+          <Pressable style={styles.iconButton} onPress={toggleTheme}>
+            <Text style={{ fontSize: 16 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+          </Pressable>
         </View>
-      ) : null}
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Current store stage</Text>
-        <Text style={styles.stageName}>{stageMeta.name}</Text>
-        <Text style={styles.bodyText}>Tiwala Score: {tiwalaScore}</Text>
-        <Text style={styles.bodyText}>Loan limit: {formatPhp(loanLimit)}</Text>
-      </View>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 130, gap: 16 }}>
+          {/* Status Header Card */}
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 24, alignItems: "center", borderRadius: 16 }]}>
+            <View style={[styles.iconCircle, { backgroundColor: theme === "light" ? "#A6F8B4" : "#0d6f37", marginBottom: 12 }]}>
+              <Text style={{ fontSize: 24 }}>📄</Text>
+            </View>
+            <Text style={[styles.stageName, { color: colors.text, fontSize: 20 }]}>Kaagapay Distributors</Text>
+            <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 1, marginTop: 4 }}>
+              Invoice #INV-2024-089
+            </Text>
 
-      {invoice ? (
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Parsed invoice</Text>
-          <Row label="Supplier" value={formatPublicKey(invoice.supplier_pubkey)} />
-          <Row label="Amount" value={formatUsdc(invoice.amount_usdc)} />
-          <Row label="Loan limit" value={formatPhp(loanLimit)} />
-          <Text
-            style={[
-              styles.eligibility,
-              { color: eligibility.eligible ? SETTLED_COLOR : SHORTAGE_COLOR },
-            ]}
-          >
-            {eligibility.eligible
-              ? "Eligible for B2B inventory financing"
-              : eligibility.reason === "BR5_STAGE_DROP_LOCK"
-                ? eligibility.message
-                : `Shortfall: ${formatPhp(eligibility.shortfall)}`}
+            <View style={{ marginTop: 16, alignItems: "center" }}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600", marginBottom: 2 }}>Kabuuang Halaga (Total Amount)</Text>
+              <Text style={{ fontSize: 28, fontWeight: "900", color: colors.primary }}>{formatPhp(totalAmountPhp)}</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: colors.cardSecondary, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 99, marginTop: 6 }}>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600" }}>🪙 {formatUsdc(invoice.amount_usdc)} Equivalent</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Kwalipikasyon para sa Pondo Bento section */}
+          <View style={[styles.card, { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 16 }]}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <Text style={{ fontSize: 18 }}>🛡️</Text>
+              <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>Kwalipikasyon para sa Pondo</Text>
+            </View>
+
+            {/* Progress bar */}
+            <View style={{ gap: 6, marginBottom: 16 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600" }}>Funding Progress</Text>
+                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "800" }}>{fundingProgressPercent}% Ready</Text>
+              </View>
+              <View style={{ height: 8, width: "100%", backgroundColor: colors.border, borderRadius: 99, overflow: "hidden" }}>
+                <View style={{ height: "100%", width: `${fundingProgressPercent}%`, backgroundColor: colors.primary, borderRadius: 99 }} />
+              </View>
+            </View>
+
+            {/* Bento tiles */}
+            <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
+              <View style={[styles.bentoTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Credit Line</Text>
+                <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>{formatPhp(creditLineApproved)}</Text>
+                <Text style={{ fontSize: 10, color: colors.primary, fontWeight: "700", marginTop: 4 }}>✓ APPROVED</Text>
+              </View>
+              <View style={[styles.bentoTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Owner Cash</Text>
+                <Text style={{ fontSize: 15, fontWeight: "800", color: colors.error }}>{formatPhp(ownerCashRequired)}</Text>
+                <Text style={{ fontSize: 10, color: ownerCashRequired > 0 ? colors.error : colors.textSecondary, fontWeight: "700", marginTop: 4 }}>
+                  {ownerCashRequired > 0 ? "⚠ REQUIRED" : "✓ NOT REQUIRED"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Stellar Secure block info */}
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.card, padding: 12, borderRadius: 12, borderColor: colors.border, borderWidth: 1 }}>
+              <Text style={{ fontSize: 24 }}>🚀</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>Secure Blockchain Settlement</Text>
+                <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 1, lineHeight: 13 }}>
+                  Ito ay ise-settle sa pamamagitan ng Stellar Testnet para sa mabilis at ligtas na transaksyon.
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Details list */}
+          <View style={{ gap: 2, paddingHorizontal: 4 }}>
+            <Row label="Kategorya" value="Grocery Supply" />
+            <Row label="Petsa" value="May 21, 2026" />
+            <Row label="Blockchain ID" value={`${invoice.supplier_pubkey.slice(0, 10)}...${invoice.supplier_pubkey.slice(-8)}`} />
+          </View>
+
+          <Text style={{ fontSize: 11, fontStyle: "italic", color: colors.textSecondary, textAlign: "center", paddingHorizontal: 16 }}>
+            Pansinin: Ang utang ay may 2% interest rate kada buwan kung hindi mababayaran sa takdang panahon.
           </Text>
 
-          {/* 4-B: disabled while settling to prevent rage-click double-submit */}
+          {scanError ? (
+            <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginTop: 8 }]}>
+              <Text style={[styles.errorText, { color: colors.error }]}>{scanError}</Text>
+            </View>
+          ) : null}
+        </ScrollView>
+
+        {/* Sticky bottom buttons */}
+        <View style={[styles.stickyFooter, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
           <Pressable
             disabled={!eligibility.eligible || isSettling}
-            onPress={handleSettleInvoice}
             style={({ pressed }) => [
               styles.primaryButton,
+              { backgroundColor: colors.primary, borderRadius: 99 },
               pressed && styles.pressed,
               (!eligibility.eligible || isSettling) && styles.disabled,
             ]}
+            onPress={handleSettleInvoice}
           >
-            <Text style={styles.primaryButtonText}>
-              {isSettling ? "Sine-save..." : network.isOffline ? "Save offline draft" : stageMeta.actionLabel}
+            <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
+              {isSettling ? "Sine-save..." : network.isOffline ? "Save offline draft" : "Pondohan ang Upgrade"}
             </Text>
           </Pressable>
-        </View>
-      ) : null}
 
-      {draftMessage ? (
-        <View style={styles.resultCard}>
-          <Text style={styles.resultTitle}>Offline draft saved</Text>
-          <Text style={styles.bodyText}>{draftMessage}</Text>
-          <Text style={styles.txQrLabel}>Status: pending_online_submission</Text>
-        </View>
-      ) : null}
-
-      {settlementResult ? (
-        <View
-          style={[
-            styles.resultCard,
-            {
-              borderColor: settlementResult.success ? SETTLED_COLOR : SHORTAGE_COLOR,
-              backgroundColor: settlementResult.success ? "#F0FFF4" : "#FFF0EF",
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.resultTitle,
-              { color: settlementResult.success ? SETTLED_COLOR : SHORTAGE_COLOR },
+          <Pressable
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99 },
+              pressed && styles.pressed,
             ]}
+            onPress={() => router.back()}
           >
-            {settlementResult.success ? "Bayad Na" : "Settlement failed"}
-          </Text>
-
-          {settlementResult.success ? (
-            <>
-              {/* 4-D: Truncated hash display for the Bayad Na screen */}
-              <Text style={styles.txHash}>{shortHash}</Text>
-              {/* 4-D: Full selectable hash for the driver's logbook */}
-              <View style={styles.txQrFallback}>
-                <Text style={styles.txQrLabel}>Stellar TX Hash (para sa logbook):</Text>
-                <Text style={styles.txQrValue} selectable>
-                  {settlementResult.transactionHash}
-                </Text>
-              </View>
-            </>
-          ) : (
-            <Text style={styles.bodyText}>{settlementResult.error}</Text>
-          )}
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Utangin ang Kulang</Text>
+          </Pressable>
         </View>
-      ) : null}
-    </ScrollView>
-  );
+      </View>
+    );
+  }
+
+  // STEP 3: TRANSACTION SUCCESS SCREEN
+  if (currentStep === "success") {
+    return (
+      <View style={[styles.mainContainer, { backgroundColor: colors.background }]}>
+        {/* Top App Bar */}
+        <View style={[styles.headerBar, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.headerTitle, { color: colors.primary, marginLeft: 16 }]}>SariSync Ledger</Text>
+          <Pressable style={styles.iconButton} onPress={toggleTheme}>
+            <Text style={{ fontSize: 16 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+          </Pressable>
+        </View>
+
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 130, alignItems: "center" }}>
+          {/* Success Header Status */}
+          <View style={{ alignItems: "center", marginVertical: 24 }}>
+            <View style={styles.successBadgeOuter}>
+              <View style={styles.successBadgeInner}>
+                <Text style={{ fontSize: 36, color: "#FFFFFF" }}>✓</Text>
+              </View>
+            </View>
+            <Text style={{ fontSize: 26, fontWeight: "900", color: "#1A6B4A", marginTop: 12 }}>Bayad Na!</Text>
+          </View>
+
+          {/* Receipt card element */}
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, width: "100%", padding: 0, overflow: "hidden", borderRadius: 16, elevation: 4 }]}>
+            {/* Top outline indicator */}
+            <View style={{ height: 6, backgroundColor: colors.primary, opacity: 0.5 }} />
+
+            <View style={{ padding: 24, gap: 16 }}>
+              <View style={{ alignSelf: "center", backgroundColor: colors.cardSecondary, paddingHorizontal: 16, paddingVertical: 6, borderRadius: 99, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={{ fontSize: 12, color: colors.primary }}>✓</Text>
+                <Text style={{ fontSize: 11, fontWeight: "700", color: colors.text }}>Kumpirmadong Settled</Text>
+              </View>
+
+              <View style={{ alignItems: "center", gap: 2 }}>
+                <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 1 }}>Supplier</Text>
+                <Text style={{ fontSize: 20, fontWeight: "900", color: colors.text }}>Kaagapay Distributors</Text>
+              </View>
+
+              <View style={{ height: 1, borderColor: colors.border, borderStyle: "dashed", borderWidth: 1, borderRadius: 1 }} />
+
+              <View style={{ alignItems: "center", gap: 2 }}>
+                <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 1 }}>Total Paid</Text>
+                <Text style={{ fontSize: 28, fontWeight: "900", color: colors.text }}>{formatPhp(totalAmountPhp)}</Text>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>({formatUsdc(invoice?.amount_usdc || 0)})</Text>
+              </View>
+
+              <View style={{ flexDirection: "row", justifyContent: "space-between", paddingTop: 8 }}>
+                <View>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary }}>Petsa</Text>
+                  <Text style={{ fontSize: 14, fontWeight: "800", color: colors.text, marginTop: 2 }}>May 21, 2026</Text>
+                </View>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary }}>Paraan</Text>
+                  <Text style={{ fontSize: 14, fontWeight: "800", color: colors.text, marginTop: 2 }}>Ledger Wallet</Text>
+                </View>
+              </View>
+
+              {settlementResult?.transactionHash || draftMessage ? (
+                <View style={{ backgroundColor: colors.cardSecondary, padding: 12, borderRadius: 8, gap: 4 }}>
+                  <Text style={{ fontSize: 9, fontWeight: "800", color: colors.textSecondary, letterSpacing: 0.5 }}>TRANSACTION HASH</Text>
+                  <Text style={{ fontSize: 10, color: colors.textSecondary }} selectable numberOfLines={1} ellipsizeMode="middle">
+                    {settlementResult?.transactionHash || "Saved Offline (pending_online_submission)"}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+
+            {/* Jagged border bottom simulation */}
+            <View style={styles.jaggedBorder} />
+          </View>
+        </ScrollView>
+
+        {/* Success bottom action buttons */}
+        <View style={[styles.stickyFooter, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
+          <Pressable
+            style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.primary, borderRadius: 99 }, pressed && styles.pressed]}
+            onPress={() => {
+              alert("Gumawa ng Dokumento: Resibo ay matagumpay na na-download sa storage!");
+            }}
+          >
+            <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Gumawa ng Dokumento</Text>
+          </Pressable>
+
+          <Pressable
+            style={({ pressed }) => [styles.secondaryButton, { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99 }, pressed && styles.pressed]}
+            onPress={() => router.replace("/")}
+          >
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Bumalik sa Kaha</Text>
+          </Pressable>
+        </View>
+      </View>
+    );
+  }
+
+  return null;
 }
 
 function Row({ label, value }) {
+  const { colors } = useTheme();
   return (
     <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+      <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[styles.rowValue, { color: colors.text }]}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    padding: 20,
-    paddingBottom: 48,
-    gap: 16,
+  mainContainer: {
+    flex: 1,
   },
-  header: {
+  headerBar: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    marginTop: 32,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+  },
+  iconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cameraViewport: {
+    flex: 1,
+    position: "relative",
+    overflow: "hidden",
+    minHeight: 280,
+  },
+  viewportMask: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 84, 39, 0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  focusedFrame: {
+    width: 240,
+    height: 240,
+    position: "relative",
+  },
+  scannerCorner: {
+    position: "absolute",
+    width: 28,
+    height: 28,
+    borderColor: "#82d995",
+    borderWidth: 4,
+  },
+  cornerTL: {
+    top: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+    borderTopLeftRadius: 8,
+  },
+  cornerTR: {
+    top: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderBottomWidth: 0,
+    borderTopRightRadius: 8,
+  },
+  cornerBL: {
+    bottom: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderTopWidth: 0,
+    borderBottomLeftRadius: 8,
+  },
+  cornerBR: {
+    bottom: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderTopWidth: 0,
+    borderBottomRightRadius: 8,
+  },
+  laserLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: "#9df6af",
+  },
+  floatingHelper: {
+    position: "absolute",
+    bottom: 20,
+    left: 16,
+    right: 16,
+    alignItems: "center",
+    zIndex: 20,
+    gap: 8,
+  },
+  floatingText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    textAlign: "center",
+    textShadowColor: "rgba(0, 0, 0, 0.6)",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 99,
     gap: 6,
   },
-  eyebrow: {
-    color: "#527061",
-    fontSize: 13,
-    fontWeight: "800",
-    letterSpacing: 0,
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#9df6af",
   },
-  title: {
-    color: "#17231D",
-    fontSize: 42,
-    fontWeight: "900",
-    letterSpacing: 0,
+  statusText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
   },
-  subtitle: {
-    color: "#5D675F",
-    fontSize: 16,
-    lineHeight: 23,
-  },
-  cameraShell: {
-    borderRadius: 8,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#D4CEC1",
-    minHeight: 300,
-    backgroundColor: "#17231D",
-  },
-  camera: {
-    minHeight: 300,
-  },
-  permissionCard: {
-    padding: 18,
-    gap: 14,
+  bottomControlCard: {
+    height: 260,
+    borderTopWidth: 1,
+    padding: 16,
   },
   card: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#E0DACF",
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     gap: 12,
   },
-  cardLabel: {
-    color: "#6E766F",
-    fontSize: 13,
-    fontWeight: "800",
+  iconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
   },
   stageName: {
-    color: "#17231D",
-    fontSize: 22,
-    fontWeight: "900",
+    fontWeight: "800",
   },
-  bodyText: {
-    color: "#4F5A53",
-    lineHeight: 22,
+  bentoTile: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 2,
   },
   row: {
     flexDirection: "row",
     justifyContent: "space-between",
-    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(0,0,0,0.05)",
   },
   rowLabel: {
-    color: "#6E766F",
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "600",
   },
   rowValue: {
-    color: "#17231D",
-    fontWeight: "900",
-    flexShrink: 1,
-    textAlign: "right",
+    fontSize: 13,
+    fontWeight: "800",
   },
-  eligibility: {
-    fontSize: 16,
-    fontWeight: "900",
+  stickyFooter: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 16,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    gap: 10,
+    zIndex: 100,
   },
   primaryButton: {
-    minHeight: 50,
-    borderRadius: 8,
+    minHeight: 48,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#17231D",
   },
   primaryButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-    fontSize: 16,
+    fontWeight: "800",
+    fontSize: 15,
   },
   secondaryButton: {
     minHeight: 48,
-    borderRadius: 8,
     alignItems: "center",
     justifyContent: "center",
-    borderColor: "#17231D",
     borderWidth: 1,
-    backgroundColor: "#FDFBF6",
   },
   secondaryButtonText: {
-    color: "#17231D",
-    fontWeight: "900",
-  },
-  errorCard: {
-    backgroundColor: "#FFF0EF",
-    borderColor: "#FF3B30",
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 14,
-  },
-  errorText: {
-    color: "#FF3B30",
     fontWeight: "800",
+    fontSize: 15,
   },
-  resultCard: {
+  successBadgeOuter: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#E2F6EA",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 4,
+    borderColor: "#FFFFFF",
+  },
+  successBadgeInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#1A6B4A",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  jaggedBorder: {
+    height: 12,
+    backgroundColor: "transparent",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(0,0,0,0.05)",
+  },
+  input: {
     borderWidth: 1,
     borderRadius: 8,
-    padding: 16,
-    gap: 8,
-  },
-  resultTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-  },
-  // 4-D: Truncated tx hash on the Bayad Na screen
-  txHash: {
-    color: "#17231D",
-    fontWeight: "800",
-    fontSize: 16,
-    letterSpacing: 1,
-  },
-  // 4-D: Selectable full hash for driver logbook
-  txQrFallback: {
-    backgroundColor: "#F7F4EC",
-    borderColor: "#E0DACF",
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    gap: 6,
-  },
-  txQrLabel: {
-    color: "#6E766F",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  txQrValue: {
-    color: "#17231D",
-    fontSize: 12,
-    fontWeight: "600",
-    letterSpacing: 0.5,
+    paddingHorizontal: 12,
+    fontSize: 13,
   },
   pressed: {
     opacity: 0.86,
+    transform: [{ scale: 0.96 }],
   },
   disabled: {
     opacity: 0.55,
   },
-  input: {
-    borderColor: "#D4CEC1",
+  errorCard: {
     borderWidth: 1,
     borderRadius: 8,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    fontSize: 18,
-    color: "#17231D",
-    backgroundColor: "#FFFEFB",
+    padding: 12,
   },
-  // 4-C: Mali ang QR Code modal styles
+  errorText: {
+    fontWeight: "700",
+    fontSize: 12,
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -522,35 +832,29 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   errorModal: {
-    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 24,
     gap: 12,
     width: "100%",
-    maxWidth: 380,
+    maxWidth: 340,
     alignItems: "center",
   },
   errorTitle: {
-    color: "#FF3B30",
-    fontSize: 20,
-    fontWeight: "900",
+    fontSize: 18,
+    fontWeight: "800",
   },
   errorBody: {
-    color: "#4F5A53",
     textAlign: "center",
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 18,
   },
   errorButton: {
-    backgroundColor: "#17231D",
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    minWidth: 120,
-    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    minWidth: 100,
   },
   errorButtonText: {
-    color: "#FFFFFF",
-    fontWeight: "900",
-    fontSize: 16,
+    fontWeight: "800",
+    fontSize: 14,
   },
 });

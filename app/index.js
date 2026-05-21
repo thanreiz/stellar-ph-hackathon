@@ -1,9 +1,10 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import {
   Alert,
+  Animated,
   Modal,
   Pressable,
   ScrollView,
@@ -64,6 +65,7 @@ import {
 } from "../services/stellarService";
 import { generateReceiptDocument } from "../utils/documentGenerator";
 import { formatPhp, formatUsdc } from "../utils/formatters";
+import { useTheme } from "../context/ThemeContext";
 
 // Lender accounts (generated via setupLiquidity + generateLenders scripts)
 const LENDER_OFFERS = [
@@ -120,6 +122,7 @@ export default function KahaScreen() {
   const router = useRouter();
   const network = useNetworkStatus();
   const insets = useSafeAreaInsets(); // 4-E: safe area for offline banner
+  const { theme, toggleTheme, colors } = useTheme();
   const [bentaAmount, setBentaAmount] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseSource, setExpenseSource] = useState("cash");
@@ -417,44 +420,111 @@ export default function KahaScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.screen}>
-      {/* 4-E: safe-area-aware offline banner — insets.top prevents it rendering under notch/Dynamic Island */}
+    <ScrollView contentContainerStyle={[styles.screen, { backgroundColor: colors.background }]}>
+      {/* 4-E: safe-area-aware offline banner */}
       {network.isOffline ? (
-        <View style={[styles.offlineBanner, { marginTop: insets.top }]}>
-          <Text style={styles.offlineText}>{OFFLINE_WARNING}</Text>
+        <View style={[styles.offlineBanner, { marginTop: insets.top, backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
+          <Text style={[styles.offlineText, { color: colors.error }]}>{OFFLINE_WARNING}</Text>
+          {/* Online ledger hidden until internet returns */}
         </View>
       ) : null}
 
-      <View style={styles.hero}>
-        <Text style={styles.eyebrow}>SariSync Ledger</Text>
-        <Text style={styles.title}>Kaha</Text>
-        <Text style={styles.subtitle}>
-          {network.isOffline
-            ? "Offline Mode. Online ledger hidden until internet returns. Local entries still save on this phone."
-            : "Online dashboard for store sales, capital, business debt, and receipts."}
-        </Text>
-        <Text style={styles.walletPill}>
-          Freighter connected · {walletConnection.publicKey.slice(0, 8)}...{walletConnection.publicKey.slice(-6)}
-        </Text>
+      {/* Top App Bar */}
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={{ fontSize: 18, color: colors.primary }}>🏪</Text>
+          <Text style={[styles.eyebrow, { color: colors.primary, fontSize: 16, fontWeight: "800", letterSpacing: 0 }]}>SariSync Ledger</Text>
+        </View>
+        <Pressable
+          onPress={toggleTheme}
+          style={({ pressed }) => [{
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            backgroundColor: colors.cardSecondary,
+            borderWidth: 1,
+            borderColor: colors.border,
+            alignItems: "center",
+            justifyContent: "center",
+          }, pressed && styles.pressed]}
+        >
+          <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+        </Pressable>
       </View>
 
-      <View style={styles.metricsGrid}>
-        <MetricCard label="Sales today" value={formatPhp(salesToday)} color="#34C759" />
-        <MetricCard label="Benta" value={formatPhp(totalSyncedBenta)} color="#34C759" />
-        <MetricCard label="Expenses" value={formatPhp(expenseTotal)} color="#FF9500" />
-        <MetricCard label="Tiwala Score" value={String(tiwalaScore)} />
-        <MetricCard label="Loan Limit" value={formatPhp(loanLimit)} />
+      {/* Wallet pill */}
+      <Text style={[styles.walletPill, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}>
+        Freighter connected · {walletConnection.publicKey.slice(0, 8)}...{walletConnection.publicKey.slice(-6)}
+      </Text>
+
+      {/* ─── BENTO GRID HERO (matches Stitch design) ─── */}
+      <View style={styles.bentoHero}>
+        {/* Card 1: Tiwala Score + Limit sa Utang */}
+        <View style={[styles.bentoCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+            <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>Tiwala Score</Text>
+            <Text style={{ fontSize: 16, color: "#2563EB" }}>✓</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 4 }}>
+            <Text style={{ fontSize: 26, fontWeight: "900", color: colors.primary }}>{tiwalaScore}</Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600" }}>/ 1000</Text>
+          </View>
+          {/* Progress bar */}
+          <View style={{ height: 6, width: "100%", backgroundColor: colors.border, borderRadius: 99, overflow: "hidden", marginTop: 10 }}>
+            <View style={{ height: "100%", width: `${Math.round((tiwalaScore / 1000) * 100)}%`, backgroundColor: colors.primary, borderRadius: 99 }} />
+          </View>
+          {/* Divider */}
+          <View style={{ height: 1, backgroundColor: colors.border, marginTop: 14, marginBottom: 10, opacity: 0.5 }} />
+          <Text style={{ fontSize: 10, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>Limit sa Utang</Text>
+          <Text style={{ fontSize: 18, fontWeight: "900", color: colors.text, marginTop: 2 }}>{formatPhp(loanLimit)}</Text>
+        </View>
+
+        {/* Card 2: Daily Totals */}
+        <View style={[styles.bentoCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border, gap: 14 }]}>
+          {/* Benta Ngayong Araw */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: theme === "light" ? "#A6F8B4" : "#0d6f37", alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 16 }}>💸</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.textSecondary }}>Benta Ngayong Araw</Text>
+              <Text style={{ fontSize: 16, fontWeight: "900", color: colors.primary }}>{formatPhp(salesToday)}</Text>
+            </View>
+          </View>
+          {/* Mga Gastos */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: theme === "light" ? "#FFE5E5" : "#3A1E1E", alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 16 }}>🧾</Text>
+            </View>
+            <View>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.textSecondary }}>Mga Gastos</Text>
+              <Text style={{ fontSize: 16, fontWeight: "900", color: colors.text }}>{formatPhp(expenseTotal)}</Text>
+            </View>
+          </View>
+        </View>
       </View>
 
-      <View style={styles.card}>
+      {/* ─── SCAN SUPPLIER INVOICE CTA ─── */}
+      <Pressable
+        onPress={() => router.push("/scanner")}
+        style={({ pressed }) => [
+          styles.scanCta,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Text style={{ fontSize: 20, color: "#FFFFFF" }}>📷</Text>
+        <Text style={{ fontSize: 16, fontWeight: "800", color: "#FFFFFF" }}>Scan Supplier Invoice</Text>
+      </Pressable>
+
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.rowBetween}>
           <View>
-            <Text style={styles.cardLabel}>Sales graph</Text>
-            <Text style={styles.stageName}>
+            <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Sales graph</Text>
+            <Text style={[styles.stageName, { color: colors.text }]}>
               {network.isOffline ? "Read-Only" : "Live Dashboard"}
             </Text>
           </View>
-          {network.isOffline ? <Text style={styles.lockText}>🔒 Cached</Text> : null}
+          {network.isOffline ? <Text style={[styles.lockText, { color: colors.textSecondary }]}>🔒 Cached</Text> : null}
         </View>
 
         <View style={styles.rangeRow}>
@@ -462,12 +532,17 @@ export default function KahaScreen() {
             <Pressable
               key={range}
               onPress={() => setActiveRange(range)}
-              style={[styles.rangeButton, activeRange === range && styles.rangeButtonActive]}
+              style={[
+                styles.rangeButton,
+                { borderColor: colors.border },
+                activeRange === range && { backgroundColor: colors.primary, borderColor: colors.primary }
+              ]}
             >
               <Text
                 style={[
                   styles.rangeButtonText,
-                  activeRange === range && styles.rangeButtonTextActive,
+                  { color: colors.text },
+                  activeRange === range && { color: theme === "light" ? "#FFFFFF" : "#111411" },
                 ]}
               >
                 {rangeLabel(range)}
@@ -479,15 +554,15 @@ export default function KahaScreen() {
         <SalesGraph series={graphSeries} />
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Log daily Benta</Text>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Log daily Benta</Text>
         <TextInput
           value={bentaAmount}
           onChangeText={setBentaAmount}
           keyboardType="number-pad"
           placeholder="Hal. 2500"
-          placeholderTextColor="#918A7F"
-          style={styles.input}
+          placeholderTextColor={colors.textSecondary}
+          style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
         />
         <Pressable
           accessibilityRole="button"
@@ -495,28 +570,29 @@ export default function KahaScreen() {
           onPress={handleAddBenta}
           style={({ pressed }) => [
             styles.primaryButton,
+            { backgroundColor: colors.primary },
             pressed && styles.pressed,
             isSavingBenta && styles.disabled,
           ]}
         >
-          <Text style={styles.primaryButtonText}>
+          <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
             {isSavingBenta ? "Sine-save..." : "I-save ang Benta"}
           </Text>
         </Pressable>
-        {statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
+        {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Log expense</Text>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Log expense</Text>
         <TextInput
           value={expenseAmount}
           onChangeText={setExpenseAmount}
           keyboardType="number-pad"
           placeholder="Hal. 1200"
-          placeholderTextColor="#918A7F"
-          style={styles.input}
+          placeholderTextColor={colors.textSecondary}
+          style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
         />
-        <Text style={styles.cardLabel}>Expense source</Text>
+        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Expense source</Text>
         <View style={styles.rangeRow}>
           {EXPENSE_PAYMENT_SOURCES.map((source) => (
             <Pressable
@@ -525,13 +601,15 @@ export default function KahaScreen() {
               onPress={() => setExpenseSource(source.id)}
               style={[
                 styles.rangeButton,
-                expenseSource === source.id && styles.rangeButtonActive,
+                { borderColor: colors.border },
+                expenseSource === source.id && { backgroundColor: colors.primary, borderColor: colors.primary },
               ]}
             >
               <Text
                 style={[
                   styles.rangeButtonText,
-                  expenseSource === source.id && styles.rangeButtonTextActive,
+                  { color: colors.text },
+                  expenseSource === source.id && { color: theme === "light" ? "#FFFFFF" : "#111411" },
                 ]}
               >
                 {source.label}
@@ -539,8 +617,11 @@ export default function KahaScreen() {
             </Pressable>
           ))}
         </View>
-        <Pressable onPress={handleAddExpense} style={styles.secondaryButton}>
-          <Text style={styles.secondaryButtonText}>I-save ang Expense</Text>
+        <Pressable
+          onPress={handleAddExpense}
+          style={[styles.secondaryButton, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}
+        >
+          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>I-save ang Expense</Text>
         </Pressable>
         {expenses.length > 0 ? (
           <View style={styles.expenseList}>
@@ -568,12 +649,17 @@ export default function KahaScreen() {
           <Pressable
             key={item}
             onPress={() => setActiveSection(item)}
-            style={[styles.navButton, activeSection === item && styles.navButtonActive]}
+            style={[
+              styles.navButton,
+              { backgroundColor: colors.card, borderColor: colors.border },
+              activeSection === item && { backgroundColor: colors.primary, borderColor: colors.primary },
+            ]}
           >
             <Text
               style={[
                 styles.navButtonText,
-                activeSection === item && styles.navButtonTextActive,
+                { color: colors.text },
+                activeSection === item && { color: theme === "light" ? "#FFFFFF" : "#111411" },
               ]}
             >
               {item}
@@ -619,17 +705,67 @@ export default function KahaScreen() {
   );
 }
 
+const LOADING_MESSAGES = [
+  "Kinokonekta ang Kaha...",
+  "Inaayos ang mga Listahan...",
+  "Sini-sync ang mga Utang...",
+  "Binibilang ang Stocks...",
+];
+
 function LoadingScreen() {
+  const { colors } = useTheme();
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const [msgIndex, setMsgIndex] = useState(0);
+
+  useEffect(() => {
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 3500,
+      useNativeDriver: false,
+    }).start();
+
+    const interval = setInterval(() => {
+      setMsgIndex((i) => (i + 1) % LOADING_MESSAGES.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const progressWidth = progressAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0%", "100%"],
+  });
+
   return (
-    <View style={styles.loadingScreen}>
-      <View style={styles.loadingMark} />
-      <Text style={styles.loadingTitle}>Loading SariSync Ledger</Text>
-      <Text style={styles.loadingText}>Checking connection and local Kaha records...</Text>
+    <View style={[styles.loadingScreen, { backgroundColor: colors.background }]}>
+      {/* App Icon placeholder */}
+      <View style={[styles.loadingIconBox, { backgroundColor: colors.primary }]}>
+        <Text style={{ fontSize: 40, color: "#FFFFFF" }}>🏪</Text>
+      </View>
+
+      {/* Brand */}
+      <Text style={[styles.loadingTitle, { color: colors.text }]}>SariSync Ledger</Text>
+      <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary, letterSpacing: 2, textTransform: "uppercase", marginBottom: 32 }}>Kaagapay ng Tindahan</Text>
+
+      {/* Rotating message */}
+      <Text style={[styles.loadingText, { color: colors.text, marginBottom: 4 }]}>{LOADING_MESSAGES[msgIndex]}</Text>
+      <Text style={[styles.loadingText, { color: colors.textSecondary, fontStyle: "italic", marginBottom: 20, fontSize: 13 }]}>Sandali lamang po.</Text>
+
+      {/* Progress bar */}
+      <View style={{ width: 240, height: 6, backgroundColor: colors.border, borderRadius: 99, overflow: "hidden", marginBottom: 32 }}>
+        <Animated.View style={{ height: "100%", width: progressWidth, backgroundColor: colors.primary, borderRadius: 99 }} />
+      </View>
+
+      {/* Trust badge */}
+      <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: colors.cardSecondary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 99, gap: 6 }}>
+        <Text style={{ color: colors.primary, fontSize: 14 }}>🔒</Text>
+        <Text style={{ fontSize: 12, fontWeight: "700", color: colors.primary }}>Ligtas at Secure</Text>
+      </View>
     </View>
   );
 }
 
 function WalletConnectionGate({ onConnect }) {
+  const { theme, toggleTheme, colors } = useTheme();
   const [publicKey, setPublicKey] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
@@ -638,7 +774,7 @@ function WalletConnectionGate({ onConnect }) {
     setErrorMessage("");
 
     if (!isValidStellarPublicKey(publicKeyToConnect)) {
-      setErrorMessage("Connect a valid Stellar Testnet public account.");
+      setErrorMessage("I-konek ang isang valid na Stellar Testnet G... public key.");
       return;
     }
 
@@ -653,64 +789,121 @@ function WalletConnectionGate({ onConnect }) {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.screen, styles.walletGateScreen]}>
-      <View style={styles.hero}>
-        <Text style={styles.eyebrow}>SariSync Ledger</Text>
-        <Text style={styles.title}>Connect Wallet</Text>
-        <Text style={styles.subtitle}>
-          Connect your Stellar Testnet account through Freighter before using Kaha.
-        </Text>
+    <ScrollView contentContainerStyle={[styles.screen, styles.walletGateScreen, { backgroundColor: colors.background }]}>
+      {/* Top Header */}
+      <View style={[styles.walletHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24, width: "100%" }]}>
+        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Text style={{ fontSize: 24, color: colors.primary }}>🔑</Text>
+          <Text style={[styles.title, { color: colors.primary, fontSize: 22, fontWeight: "800", marginBottom: 0 }]}>SariSync Ledger</Text>
+        </View>
+        <Pressable
+          onPress={toggleTheme}
+          style={({ pressed }) => [
+            {
+              padding: 8,
+              borderRadius: 99,
+              backgroundColor: colors.cardSecondary,
+              borderWidth: 1,
+              borderColor: colors.border,
+            },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+        </Pressable>
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.cardLabel}>Stellar + Freighter</Text>
-        <Text style={styles.stageName}>Store owner account</Text>
-        <TextInput
-          value={publicKey}
-          onChangeText={setPublicKey}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          placeholder="Paste Stellar G... public key"
-          placeholderTextColor="#918A7F"
-          style={[styles.input, styles.walletInput]}
-        />
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => connect(publicKey)}
-          style={({ pressed }) => [
-            styles.primaryButton,
-            pressed && styles.pressed,
-            isConnecting && styles.disabled,
-          ]}
-          disabled={isConnecting}
-        >
-          <Text style={styles.primaryButtonText}>
-            {isConnecting ? "Connecting..." : "Connect Freighter Wallet"}
+      {/* Main Connection Card */}
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 24, borderRadius: 16, width: "100%" }]}>
+        <View style={{ alignItems: "center", marginBottom: 16 }}>
+          <View style={{ backgroundColor: theme === "light" ? "#A6F8B4" : "#0d6f37", paddingHorizontal: 12, paddingVertical: 4, borderRadius: 99, marginBottom: 12 }}>
+            <Text style={{ color: theme === "light" ? "#005427" : "#A6F8B4", fontSize: 12, fontWeight: "700" }}>Konek Wallet</Text>
+          </View>
+          <Text style={[styles.bodyText, { color: colors.textSecondary, textAlign: "center", fontSize: 15, paddingHorizontal: 8 }]}>
+            I-konek ang iyong Stellar Testnet account sa pamamagitan ng Freighter bago gamitin ang Kaha.
           </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => connect(DEMO_WALLET_PUBLIC_KEY)}
-          style={styles.secondaryButton}
-        >
-          <Text style={styles.secondaryButtonText}>Use Demo Freighter Account</Text>
-        </Pressable>
-        {errorMessage ? <Text style={styles.statusText}>{errorMessage}</Text> : null}
+        </View>
+
+        <View style={{ gap: 16 }}>
+          {/* Input Section */}
+          <View style={{ gap: 6 }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700", marginLeft: 4 }}>Stellar Public Key</Text>
+            <TextInput
+              value={publicKey}
+              onChangeText={setPublicKey}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              placeholder="I-paste ang Stellar G... public key"
+              placeholderTextColor={colors.textSecondary}
+              style={[
+                styles.input,
+                styles.walletInput,
+                { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12 }
+              ]}
+            />
+          </View>
+
+          {/* Primary Action Button */}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => connect(publicKey)}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: colors.primary, borderRadius: 99 },
+              pressed && styles.pressed,
+              isConnecting && styles.disabled,
+            ]}
+            disabled={isConnecting}
+          >
+            <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
+              {isConnecting ? "Kumokonekta..." : "Konek Freighter Wallet"}
+            </Text>
+          </Pressable>
+
+          {/* Divider */}
+          <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 8 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "600", marginHorizontal: 8 }}>o kaya</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+          </View>
+
+          {/* Secondary Action Button */}
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => connect(DEMO_WALLET_PUBLIC_KEY)}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99 },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Gamitin ang Demo Freighter Account</Text>
+          </Pressable>
+
+          {errorMessage ? <Text style={[styles.statusText, { color: colors.error, textAlign: "center", marginTop: 8 }]}>{errorMessage}</Text> : null}
+        </View>
+      </View>
+
+      {/* Powered by tag */}
+      <View style={{ marginTop: 32, alignItems: "center" }}>
+        <Text style={{ fontSize: 10, color: colors.textSecondary, letterSpacing: 1.5, fontWeight: "700" }}>POWERED BY SARISYNC CORE V1.0</Text>
       </View>
     </ScrollView>
   );
 }
 
-function MetricCard({ label, value, color = "#17231D" }) {
+function MetricCard({ label, value, color }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.metricCard}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.metricValue, { color }]}>{value}</Text>
+    <View style={[styles.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[styles.metricValue, { color: color || colors.text }]}>{value}</Text>
     </View>
   );
 }
 
 function SalesGraph({ series }) {
+  const { colors } = useTheme();
   const maxAmount = Math.max(1, ...series.map((item) => item.amount));
 
   return (
@@ -720,10 +913,10 @@ function SalesGraph({ series }) {
 
         return (
           <View key={item.label} style={styles.graphItem}>
-            <View style={styles.graphTrack}>
-              <View style={[styles.graphBar, { height }]} />
+            <View style={[styles.graphTrack, { backgroundColor: colors.cardSecondary }]}>
+              <View style={[styles.graphBar, { height, backgroundColor: colors.primary }]} />
             </View>
-            <Text style={styles.graphLabel}>{item.label}</Text>
+            <Text style={[styles.graphLabel, { color: colors.textSecondary }]}>{item.label}</Text>
           </View>
         );
       })}
@@ -732,42 +925,49 @@ function SalesGraph({ series }) {
 }
 
 function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isOffline, onSubmit }) {
+  const { colors } = useTheme();
   const submitDisabled = isOffline || summary.totalPendingCount === 0;
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <View style={styles.rowBetween}>
         <View>
-          <Text style={styles.cardLabel}>Offline Work</Text>
-          <Text style={styles.stageName}>Local drafts</Text>
+          <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Offline Work</Text>
+          <Text style={[styles.stageName, { color: colors.text }]}>Local drafts</Text>
         </View>
-        <Text style={styles.lockText}>{summary.totalPendingCount} pending</Text>
+        <Text style={[styles.lockText, { color: colors.error }]}>{summary.totalPendingCount} pending</Text>
       </View>
-      <Text style={styles.bodyText}>{capabilities.message}</Text>
+      <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{capabilities.message}</Text>
       <View style={styles.metricsGrid}>
-        <MiniMetric label="Pending Benta records" value={String(summary.pendingBentaCount)} color="#34C759" />
-        <MiniMetric label="Draft supplier invoices" value={String(summary.supplierInvoiceDraftCount)} color="#007AFF" />
-        <MiniMetric label="Draft loan repayments" value={String(summary.repaymentDraftCount)} color="#FF9500" />
+        <MiniMetric label="Pending Benta records" value={String(summary.pendingBentaCount)} color={colors.primary} />
+        <MiniMetric label="Draft supplier invoices" value={String(summary.supplierInvoiceDraftCount)} color={colors.tertiary} />
+        <MiniMetric label="Draft loan repayments" value={String(summary.repaymentDraftCount)} color={colors.error} />
       </View>
-      <Text style={[styles.bodyText, { fontSize: 12 }]}>
+      <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary }]}>
         Draft status: pending_online_submission · Ready online: {draftsReadyForSubmission.length}
       </Text>
       <Pressable
         disabled={submitDisabled}
         onPress={onSubmit}
-        style={[styles.secondaryButton, submitDisabled && styles.disabledButton]}
+        style={({ pressed }) => [
+          styles.secondaryButton,
+          { backgroundColor: colors.cardSecondary, borderColor: colors.border },
+          pressed && styles.pressed,
+          submitDisabled && styles.disabled,
+        ]}
       >
-        <Text style={styles.secondaryButtonText}>Submit when online</Text>
+        <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Submit when online</Text>
       </Pressable>
     </View>
   );
 }
 
 function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardLabel}>Profile</Text>
-      <Text style={styles.stageName}>Store Settings</Text>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Profile</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Store Settings</Text>
       <InfoRow label="Store type" value="Sari-sari inventory business" />
       <InfoRow label="Stage" value={stageMeta.name} />
       <InfoRow label="Tiwala Score" value={String(tiwalaScore)} />
@@ -777,6 +977,7 @@ function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit }) {
 }
 
 function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlState, onReceiveLoan, onOpenScanner, statusMessage }) {
+  const { theme, colors } = useTheme();
   const isReadOnly = stage === CREDIT_STAGES.READ_ONLY;
   const [isRequesting, setIsRequesting] = useState(false);
   const [selectedOffer, setSelectedOffer] = useState(null);
@@ -792,48 +993,53 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
   }
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardLabel}>Tracker</Text>
-      <Text style={styles.stageName}>Capital movement</Text>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Tracker</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Capital movement</Text>
       <View style={styles.metricsGrid}>
         <MiniMetric label="Spent" value={formatPhp(snapshot.spent)} />
-        <MiniMetric label="Earned" value={formatPhp(snapshot.earned)} color="#34C759" />
-        <MiniMetric label="Capital" value={formatPhp(snapshot.capital + loanCapital)} color="#007AFF" />
-        <MiniMetric label="Active Debt" value={formatPhp(loanCapital)} color="#FF3B30" />
+        <MiniMetric label="Earned" value={formatPhp(snapshot.earned)} color={colors.primary} />
+        <MiniMetric label="Capital" value={formatPhp(snapshot.capital + loanCapital)} color={colors.tertiary} />
+        <MiniMetric label="Active Debt" value={formatPhp(loanCapital)} color={colors.error} />
       </View>
 
-      {statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
+      {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
 
       {isReadOnly ? (
-        <View style={styles.readOnlyBanner}>
-          <Text style={styles.readOnlyText}>
+        <View style={[styles.readOnlyBanner, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+          <Text style={[styles.readOnlyText, { color: colors.textSecondary }]}>
             I-record ang ₱5,000 na benta para ma-unlock ang credit at financing.
           </Text>
         </View>
       ) : (
         <>
-          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8 }]}>Microloan Offers</Text>
-          <Text style={styles.bodyText}>Tumatanggap ng pondo mula sa mga partner na microfinance companies sa Stellar Testnet.</Text>
+          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Microloan Offers</Text>
+          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Tumatanggap ng pondo mula sa mga partner na microfinance companies sa Stellar Testnet.</Text>
           {LENDER_OFFERS.map(offer => (
-            <View key={offer.id} style={styles.lenderCard}>
+            <View key={offer.id} style={[styles.lenderCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.lenderName}>{offer.name}</Text>
-                <Text style={styles.bodyText}>{offer.description}</Text>
-                <Text style={[styles.bodyText, { color: "#6E766F", fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
+                <Text style={[styles.lenderName, { color: colors.text }]}>{offer.name}</Text>
+                <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{offer.description}</Text>
+                <Text style={[styles.bodyText, { color: colors.textSecondary, fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
               </View>
               <Pressable
                 disabled={isRequesting || !controlState.canTransact}
                 onPress={() => setSelectedOffer(offer)}
-                style={[styles.loanButton, (isRequesting || !controlState.canTransact) ? styles.disabled : null]}
+                style={({ pressed }) => [
+                  styles.loanButton,
+                  { backgroundColor: colors.primary },
+                  pressed && styles.pressed,
+                  (isRequesting || !controlState.canTransact) && styles.disabled,
+                ]}
               >
-                <Text style={styles.loanButtonText}>Humingi</Text>
+                <Text style={[styles.loanButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Humingi</Text>
               </Pressable>
             </View>
           ))}
 
           {activeLoans.length > 0 && (
             <>
-              <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8 }]}>Active Loans</Text>
+              <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Active Loans</Text>
               {activeLoans.map(loan => (
                 <InfoRow
                   key={loan.id}
@@ -844,8 +1050,15 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
             </>
           )}
 
-          <Pressable onPress={onOpenScanner} style={[styles.secondaryButton, { marginTop: 12 }]}>
-            <Text style={styles.secondaryButtonText}>Scan Supplier Invoice</Text>
+          <Pressable
+            onPress={onOpenScanner}
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              { backgroundColor: colors.cardSecondary, borderColor: colors.border, marginTop: 12 },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Scan Supplier Invoice</Text>
           </Pressable>
         </>
       )}
@@ -853,24 +1066,38 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
       {/* Loan confirmation modal */}
       <Modal visible={!!selectedOffer} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Kumpirmahin ang Loan</Text>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Kumpirmahin ang Loan</Text>
             {selectedOffer && (
               <>
-                <Text style={styles.bodyText}>Lender: <Text style={{ fontWeight: "700" }}>{selectedOffer.name}</Text></Text>
-                <Text style={[styles.bodyText, { marginTop: 4 }]}>Amount: <Text style={{ fontWeight: "700", color: "#007AFF" }}>{formatPhp(selectedOffer.amountPhpc)}</Text></Text>
-                <Text style={[styles.bodyText, { marginTop: 4 }]}>Interest: {selectedOffer.interestRate}</Text>
-                <Text style={[styles.bodyText, { marginTop: 8, color: "#6E766F", fontSize: 12 }]}>
+                <Text style={[styles.bodyText, { color: colors.text }]}>Lender: <Text style={{ fontWeight: "700" }}>{selectedOffer.name}</Text></Text>
+                <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Amount: <Text style={{ fontWeight: "700", color: colors.tertiary }}>{formatPhp(selectedOffer.amountPhpc)}</Text></Text>
+                <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Interest: {selectedOffer.interestRate}</Text>
+                <Text style={[styles.bodyText, { marginTop: 8, color: colors.textSecondary, fontSize: 12 }]}>
                   Ito ay isang Stellar Testnet transaction. Ang PHPC ay ililipat sa iyong store wallet.
                 </Text>
               </>
             )}
             <View style={{ flexDirection: "row", marginTop: 16 }}>
-              <Pressable style={[styles.primaryButton, { flex: 1, marginRight: 8 }]} onPress={() => handleRequest(selectedOffer)}>
-                <Text style={styles.primaryButtonText}>{isRequesting ? "Naghihintay..." : "Tanggapin"}</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  { flex: 1, marginRight: 8, backgroundColor: colors.primary },
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => handleRequest(selectedOffer)}
+              >
+                <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isRequesting ? "Naghihintay..." : "Tanggapin"}</Text>
               </Pressable>
-              <Pressable style={[styles.secondaryButton, { flex: 1, marginTop: 0 }]} onPress={() => setSelectedOffer(null)}>
-                <Text style={styles.secondaryButtonText}>Kanselahin</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  { flex: 1, marginTop: 0, backgroundColor: colors.cardSecondary, borderColor: colors.border },
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => setSelectedOffer(null)}
+              >
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Kanselahin</Text>
               </Pressable>
             </View>
           </View>
@@ -881,6 +1108,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
 }
 
 function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
+  const { theme, colors } = useTheme();
   const [confirmLoan, setConfirmLoan] = useState(null);
   const [isRepaying, setIsRepaying] = useState(false);
   const [validateHash, setValidateHash] = useState("");
@@ -907,29 +1135,34 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
   }
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardLabel}>Debt</Text>
-      <Text style={styles.stageName}>Business debt tracker</Text>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Debt</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Business debt tracker</Text>
 
-      {statusMessage ? <Text style={styles.statusText}>{statusMessage}</Text> : null}
+      {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
 
       {/* Active debts */}
-      <Text style={[styles.cardLabel, { marginTop: 8, marginBottom: 8 }]}>Mga Aktibong Utang</Text>
+      <Text style={[styles.cardLabel, { marginTop: 8, marginBottom: 8, color: colors.textSecondary }]}>Mga Aktibong Utang</Text>
       {activeLoans.length === 0 ? (
-        <Text style={styles.bodyText}>Wala kang aktibong utang. Humingi ng loan sa Tracker tab.</Text>
+        <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Wala kang aktibong utang. Humingi ng loan sa Tracker tab.</Text>
       ) : (
         activeLoans.map(loan => (
-          <View key={loan.id} style={styles.debtRow}>
+          <View key={loan.id} style={[styles.debtRow, { borderColor: colors.border }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.lenderName}>{loan.lenderName}</Text>
-              <Text style={styles.bodyText}>{new Date(loan.timestamp).toLocaleDateString("en-PH")}</Text>
+              <Text style={[styles.lenderName, { color: colors.text }]}>{loan.lenderName}</Text>
+              <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{new Date(loan.timestamp).toLocaleDateString("en-PH")}</Text>
             </View>
             <View style={styles.alignRight}>
-              <Text style={styles.debtAmount}>{formatPhp(loan.amountPhpDisplay)}</Text>
+              <Text style={[styles.debtAmount, { color: colors.error }]}>{formatPhp(loan.amountPhpDisplay)}</Text>
               <Pressable
                 disabled={isRepaying}
                 onPress={() => setConfirmLoan(loan)}
-                style={[styles.bayadButton, isRepaying ? styles.disabled : null]}
+                style={({ pressed }) => [
+                  styles.bayadButton,
+                  { backgroundColor: colors.error },
+                  pressed && styles.pressed,
+                  isRepaying && styles.disabled,
+                ]}
               >
                 <Text style={styles.bayadButtonText}>{controlState.canTransact ? "Bayad" : "Draft"}</Text>
               </Pressable>
@@ -941,15 +1174,15 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
       {/* Paid debts */}
       {paidLoans.length > 0 && (
         <>
-          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8 }]}>Nabayarang Utang</Text>
+          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Nabayarang Utang</Text>
           {paidLoans.map(loan => (
-            <View key={loan.id} style={styles.debtRow}>
+            <View key={loan.id} style={[styles.debtRow, { borderColor: colors.border }]}>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.lenderName, { color: "#6E766F" }]}>{loan.lenderName}</Text>
+                <Text style={[styles.lenderName, { color: colors.textSecondary }]}>{loan.lenderName}</Text>
               </View>
               <View style={styles.alignRight}>
-                <Text style={[styles.debtAmount, { color: "#34C759" }]}>{formatPhp(loan.amountPhpDisplay)}</Text>
-                <Text style={[styles.bodyText, { color: "#34C759", fontSize: 11 }]}>✓ Paid</Text>
+                <Text style={[styles.debtAmount, { color: colors.primary }]}>{formatPhp(loan.amountPhpDisplay)}</Text>
+                <Text style={[styles.bodyText, { color: colors.primary, fontSize: 11 }]}>✓ Paid</Text>
               </View>
             </View>
           ))}
@@ -957,42 +1190,47 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
       )}
 
       {/* Validate Stellar Invoice */}
-      <Text style={[styles.cardLabel, { marginTop: 20, marginBottom: 8 }]}>I-Validate ang Stellar Invoice</Text>
-      <Text style={styles.bodyText}>I-paste ang transaction hash para i-verify sa Horizon Testnet.</Text>
+      <Text style={[styles.cardLabel, { marginTop: 20, marginBottom: 8, color: colors.textSecondary }]}>I-Validate ang Stellar Invoice</Text>
+      <Text style={[styles.bodyText, { color: colors.textSecondary }]}>I-paste ang transaction hash para i-verify sa Horizon Testnet.</Text>
       <TextInput
         value={validateHash}
         onChangeText={setValidateHash}
         placeholder="Transaction hash (64 hex chars)"
-        placeholderTextColor="#918A7F"
-        style={[styles.input, { marginVertical: 8, fontSize: 13 }]}
+        placeholderTextColor={colors.textSecondary}
+        style={[styles.input, { marginVertical: 8, fontSize: 13, backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
         autoCapitalize="none"
         autoCorrect={false}
       />
-      <Text style={[styles.bodyText, { fontSize: 11 }]}>
+      <Text style={[styles.bodyText, { fontSize: 11, color: colors.textSecondary }]}>
         Sample Testnet TX: {DEMO_TRANSACTION_HASH}
       </Text>
       <Pressable
         disabled={isValidating || !validateHash.trim()}
         onPress={handleValidate}
-        style={[styles.primaryButton, (isValidating || !validateHash.trim()) ? styles.disabled : null]}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          { backgroundColor: colors.primary },
+          pressed && styles.pressed,
+          (isValidating || !validateHash.trim()) && styles.disabled,
+        ]}
       >
-        <Text style={styles.primaryButtonText}>{isValidating ? "Nag-va-validate..." : "I-Validate"}</Text>
+        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isValidating ? "Nag-va-validate..." : "I-Validate"}</Text>
       </Pressable>
 
       {validationResult && (
-        <View style={[styles.lenderCard, { marginTop: 12, backgroundColor: validationResult.success ? "#F0FBF4" : "#FFF0F0" }]}>
+        <View style={[styles.lenderCard, { marginTop: 12, backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
           {validationResult.success ? (
-            <>
-              <Text style={[styles.rowLabel, { color: "#1A6B4A" }]}>✅ Valid Stellar Transaction</Text>
+            <View style={{ width: "100%" }}>
+              <Text style={[styles.rowLabel, { color: colors.primary }]}>✅ Valid Stellar Transaction</Text>
               <InfoRow label="Ledger" value={String(validationResult.ledger)} />
               <InfoRow label="Date" value={new Date(validationResult.createdAt).toLocaleString("en-PH")} />
               <InfoRow label="Source" value={validationResult.sourceAccount.slice(0, 8) + "..." + validationResult.sourceAccount.slice(-6)} />
               <InfoRow label="Operations" value={String(validationResult.operationCount)} />
               {validationResult.memo && <InfoRow label="Memo" value={validationResult.memo} />}
               <InfoRow label="Successful" value={validationResult.successful ? "Yes" : "No"} />
-            </>
+            </View>
           ) : (
-            <Text style={[styles.bodyText, { color: "#FF3B30" }]}>❌ {validationResult.error}</Text>
+            <Text style={[styles.bodyText, { color: colors.error }]}>❌ {validationResult.error}</Text>
           )}
         </View>
       )}
@@ -1000,13 +1238,13 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
       {/* Payment confirmation modal */}
       <Modal visible={!!confirmLoan} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Kumpirmahin ang Bayad</Text>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Kumpirmahin ang Bayad</Text>
             {confirmLoan && (
               <>
-                <Text style={styles.bodyText}>Magbabayad sa: <Text style={{ fontWeight: "700" }}>{confirmLoan.lenderName}</Text></Text>
-                <Text style={[styles.bodyText, { marginTop: 4 }]}>Halaga: <Text style={{ fontWeight: "700", color: "#FF3B30" }}>{formatPhp(confirmLoan.amountPhpDisplay)}</Text></Text>
-                <Text style={[styles.bodyText, { marginTop: 8, fontSize: 12, color: "#6E766F" }]}>
+                <Text style={[styles.bodyText, { color: colors.text }]}>Magbabayad sa: <Text style={{ fontWeight: "700" }}>{confirmLoan.lenderName}</Text></Text>
+                <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Halaga: <Text style={{ fontWeight: "700", color: colors.error }}>{formatPhp(confirmLoan.amountPhpDisplay)}</Text></Text>
+                <Text style={[styles.bodyText, { marginTop: 8, fontSize: 12, color: colors.textSecondary }]}>
                   {controlState.canTransact
                     ? "Ito ay isang Stellar Testnet transaction na mag-sesend ng PHPC mula sa iyong store wallet."
                     : "Offline ngayon. Ise-save muna ito bilang repayment draft at hindi pa ibo-broadcast sa Stellar."}
@@ -1014,13 +1252,27 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
               </>
             )}
             <View style={{ flexDirection: "row", marginTop: 16 }}>
-              <Pressable style={[styles.primaryButton, { flex: 1, marginRight: 8, backgroundColor: "#FF3B30" }]} onPress={() => handleRepay(confirmLoan)}>
-                <Text style={styles.primaryButtonText}>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.primaryButton,
+                  { flex: 1, marginRight: 8, backgroundColor: colors.error },
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => handleRepay(confirmLoan)}
+              >
+                <Text style={[styles.primaryButtonText, { color: "#FFFFFF" }]}>
                   {isRepaying ? "Nagbabayad..." : controlState.canTransact ? "Bayaran" : "Save Draft"}
                 </Text>
               </Pressable>
-              <Pressable style={[styles.secondaryButton, { flex: 1, marginTop: 0 }]} onPress={() => setConfirmLoan(null)}>
-                <Text style={styles.secondaryButtonText}>Kanselahin</Text>
+              <Pressable
+                style={({ pressed }) => [
+                  styles.secondaryButton,
+                  { flex: 1, marginTop: 0, backgroundColor: colors.cardSecondary, borderColor: colors.border },
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => setConfirmLoan(null)}
+              >
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Kanselahin</Text>
               </Pressable>
             </View>
           </View>
@@ -1031,49 +1283,50 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
 }
 
 function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, documentStatusMessage }) {
+  const { theme, colors } = useTheme();
   const totalUsdc = receipts.reduce((s, r) => s + Number(r.amountUsdc || 0), 0);
   const totalLoaned = loans.reduce((s, l) => s + Number(l.amountPhpDisplay || 0), 0);
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.cardLabel}>Receipts</Text>
-      <Text style={styles.stageName}>Transaction proof</Text>
+    <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Receipts</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Transaction proof</Text>
 
       <View style={styles.metricsGrid}>
         <MiniMetric label="Settlements" value={String(receipts.length)} />
-        <MiniMetric label="Total USDC" value={totalUsdc.toFixed(2)} color="#34C759" />
+        <MiniMetric label="Total USDC" value={totalUsdc.toFixed(2)} color={colors.primary} />
         <MiniMetric label="Loans" value={String(loans.length)} />
-        <MiniMetric label="Loaned" value={formatPhp(totalLoaned)} color="#007AFF" />
+        <MiniMetric label="Loaned" value={formatPhp(totalLoaned)} color={colors.tertiary} />
       </View>
 
       {receipts.length > 0 || loans.length > 0 ? (
         <>
           {receipts.length > 0 && (
             <>
-              <Text style={[styles.cardLabel, { marginTop: 12, marginBottom: 6 }]}>B2B Supplier Settlements</Text>
+              <Text style={[styles.cardLabel, { marginTop: 12, marginBottom: 6, color: colors.textSecondary }]}>B2B Supplier Settlements</Text>
               {receipts.map((receipt) => (
-                <View key={receipt.id} style={styles.receiptRow}>
+                <View key={receipt.id} style={[styles.receiptRow, { borderBottomColor: colors.border }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.rowLabel}>{receipt.type ?? "B2B_FINANCING"}</Text>
-                    <Text style={styles.bodyText}>{new Date(receipt.timestamp).toLocaleDateString("en-PH")}</Text>
+                    <Text style={[styles.rowLabel, { color: colors.text }]}>{receipt.type ?? "B2B_FINANCING"}</Text>
+                    <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{new Date(receipt.timestamp).toLocaleDateString("en-PH")}</Text>
                   </View>
-                  <Text style={[styles.debtAmount, { color: "#34C759" }]}>{formatUsdc(receipt.amountUsdc)}</Text>
+                  <Text style={[styles.debtAmount, { color: colors.primary }]}>{formatUsdc(receipt.amountUsdc)}</Text>
                 </View>
               ))}
             </>
           )}
           {loans.length > 0 && (
             <>
-              <Text style={[styles.cardLabel, { marginTop: 12, marginBottom: 6 }]}>Microloan Records</Text>
+              <Text style={[styles.cardLabel, { marginTop: 12, marginBottom: 6, color: colors.textSecondary }]}>Microloan Records</Text>
               {loans.map((loan) => (
-                <View key={loan.id} style={styles.receiptRow}>
+                <View key={loan.id} style={[styles.receiptRow, { borderBottomColor: colors.border }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.rowLabel}>{loan.lenderName}</Text>
-                    <Text style={styles.bodyText}>{new Date(loan.timestamp).toLocaleDateString("en-PH")}</Text>
+                    <Text style={[styles.rowLabel, { color: colors.text }]}>{loan.lenderName}</Text>
+                    <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{new Date(loan.timestamp).toLocaleDateString("en-PH")}</Text>
                   </View>
                   <View style={styles.alignRight}>
-                    <Text style={styles.debtAmount}>{formatPhp(loan.amountPhpDisplay)}</Text>
-                    <Text style={[styles.bodyText, { fontSize: 11, color: loan.status === "paid" ? "#34C759" : "#FF9500" }]}>
+                    <Text style={[styles.debtAmount, { color: colors.text }]}>{formatPhp(loan.amountPhpDisplay)}</Text>
+                    <Text style={[styles.bodyText, { fontSize: 11, color: loan.status === "paid" ? colors.primary : colors.secondary }]}>
                       {loan.status === "paid" ? "✓ Paid" : "Active"}
                     </Text>
                   </View>
@@ -1086,12 +1339,16 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
 
       <Pressable
         onPress={onCreateDocument}
-        style={styles.primaryButton}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          { backgroundColor: colors.primary, marginTop: 12 },
+          pressed && styles.pressed,
+        ]}
       >
-        <Text style={styles.primaryButtonText}>📄 Create Document</Text>
+        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>📄 Create Document</Text>
       </Pressable>
       {documentStatusMessage ? (
-        <Text style={[styles.bodyText, { fontSize: 12, color: "#6E766F", textAlign: "center" }]}>
+        <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary, textAlign: "center" }]}>
           {documentStatusMessage}
         </Text>
       ) : null}
@@ -1099,25 +1356,28 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
   );
 }
 
-function MiniMetric({ label, value, color = "#17231D" }) {
+function MiniMetric({ label, value, color }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.miniMetric}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <Text style={[styles.miniMetricValue, { color }]}>{value}</Text>
+    <View style={[styles.miniMetric, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+      <Text style={[styles.metricLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[styles.miniMetricValue, { color: color || colors.text }]}>{value}</Text>
     </View>
   );
 }
 
 function InfoRow({ label, value }) {
+  const { colors } = useTheme();
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <Text style={styles.rowValue}>{value}</Text>
+    <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
+      <Text style={[styles.rowLabel, { color: colors.text }]}>{label}</Text>
+      <Text style={[styles.rowValue, { color: colors.text }]}>{value}</Text>
     </View>
   );
 }
 
 function OnlineActionButton({ label, controlState, onPress }) {
+  const { theme, colors } = useTheme();
   const disabled = !controlState.canTransact;
 
   return (
@@ -1125,11 +1385,16 @@ function OnlineActionButton({ label, controlState, onPress }) {
       <Pressable
         disabled={disabled}
         onPress={onPress}
-        style={[styles.primaryButton, disabled && styles.disabledButton]}
+        style={({ pressed }) => [
+          styles.primaryButton,
+          { backgroundColor: colors.primary },
+          pressed && styles.pressed,
+          disabled && styles.disabled,
+        ]}
       >
-        <Text style={styles.primaryButtonText}>{disabled ? `🔒 ${label}` : label}</Text>
+        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{disabled ? `🔒 ${label}` : label}</Text>
       </Pressable>
-      {disabled ? <Text style={styles.lockHint}>{controlState.reason}</Text> : null}
+      {disabled ? <Text style={[styles.lockHint, { color: colors.textSecondary }]}>{controlState.reason}</Text> : null}
     </>
   );
 }
@@ -1153,29 +1418,50 @@ function expenseSourceLabel(sourceId) {
 const styles = StyleSheet.create({
   loadingScreen: {
     flex: 1,
-    minHeight: 640,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  loadingIconBox: {
+    width: 100,
+    height: 100,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    padding: 24,
-    backgroundColor: "#F7F4EC",
-  },
-  loadingMark: {
-    width: 54,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: "#17231D",
-    marginBottom: 18,
+    marginBottom: 20,
   },
   loadingTitle: {
-    color: "#17231D",
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: "900",
+    marginBottom: 6,
     textAlign: "center",
   },
   loadingText: {
-    color: "#5D675F",
-    marginTop: 8,
+    fontSize: 15,
     textAlign: "center",
+  },
+  bentoHero: {
+    flexDirection: "row",
+    gap: 12,
+    marginVertical: 12,
+  },
+  bentoCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    minHeight: 160,
+    justifyContent: "center",
+  },
+  scanCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    height: 56,
+    borderRadius: 99,
+    backgroundColor: "#0D6F37",
+    marginBottom: 8,
   },
   screen: {
     padding: 20,
@@ -1479,6 +1765,7 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.86,
+    transform: [{ scale: 0.96 }],
   },
   disabled: {
     opacity: 0.65,
