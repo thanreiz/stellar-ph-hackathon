@@ -74,12 +74,11 @@ describe("business controls", () => {
     assert.equal(snapshot.businessDebt, 2500);
   });
 
-  it("falls back to SAMPLE_BUSINESS_TRANSACTIONS when receipts array is empty", () => {
+  it("returns zero metrics when receipts array is empty", () => {
     const snapshot = getBusinessSnapshot([], []);
-    // SAMPLE_BUSINESS_TRANSACTIONS has expense 1250+2100=3350, capital 3500, businessDebt 1800
-    assert.equal(snapshot.spent, 3350);
-    assert.equal(snapshot.capital, 3500);
-    assert.equal(snapshot.businessDebt, 1800);
+    assert.equal(snapshot.spent, 0);
+    assert.equal(snapshot.capital, 0);
+    assert.equal(snapshot.businessDebt, 0);
   });
 
   it("sums expenses across cash and digital bank payment sources", () => {

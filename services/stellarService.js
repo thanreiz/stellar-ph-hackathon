@@ -344,6 +344,43 @@ export async function getStoreBalances(publicKey) {
 }
 
 /**
+ * Fetch live wallet balances from the Stellar Horizon Testnet.
+ * Extract native (XLM) and PHPC balances. Do not mock.
+ * Throws an error if loading the account fails.
+ */
+export async function fetchLiveWalletBalances(publicKey) {
+  try {
+    const config = getStellarConfig();
+    const server = getHorizonServer();
+    const account = await server.loadAccount(publicKey);
+    
+    let xlmBalance = "0.0000";
+    let phpcBalance = "0.0000";
+    
+    account.balances.forEach(b => {
+      if (b.asset_type === "native") {
+        xlmBalance = b.balance;
+      } else if (b.asset_code === "PHPC" && b.asset_issuer === config.phpcIssuer) {
+        phpcBalance = b.balance;
+      }
+    });
+    
+    return {
+      xlm: xlmBalance,
+      phpc: phpcBalance,
+    };
+  } catch (err) {
+    if (err.status === 404 || err.message?.includes("404") || err.name === "NotFoundError") {
+      return {
+        xlm: "0.0000",
+        phpc: "0.0000",
+      };
+    }
+    throw err;
+  }
+}
+
+/**
  * Fetch the current exchange rate of XLM in Philippine Pesos (PHP).
  * Calls CryptoCompare or CoinGecko dynamically, falling back to 8.5 if rate-limited or offline.
  */

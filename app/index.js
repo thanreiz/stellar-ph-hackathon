@@ -3,7 +3,9 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   Modal,
@@ -37,6 +39,7 @@ import {
   saveWalletConnection,
   syncPendingSalesQueue,
   updateLoanStatus,
+  appendReceipt,
 } from "../services/storageService";
 import {
   CREDIT_STAGES,
@@ -47,7 +50,6 @@ import {
 } from "../services/creditLadderService";
 import {
   GRAPH_RANGES,
-  SAMPLE_BUSINESS_TRANSACTIONS,
   getBusinessSnapshot,
   getExpenseTotal,
   getOfflineControlState,
@@ -62,8 +64,7 @@ import {
   summarizeOfflineWork,
 } from "../services/offlineDraftService";
 import {
-  fetchXlmToPhpRate,
-  getStoreBalances,
+  fetchLiveWalletBalances,
   receiveLoanFromLender,
   repayLoan,
   validateStellarTransaction,
@@ -72,6 +73,7 @@ import { fetchOnChainProfile, syncProfileToChain } from "../services/sorobanServ
 import { generateReceiptDocument } from "../utils/documentGenerator";
 import { formatPhp, formatUsdc } from "../utils/formatters";
 import { useTheme } from "../context/ThemeContext";
+import { useAppContext } from "../context/AppContext";
 import { BentoMetricCard, IconNav, ProofHint } from "../components/SariSyncUI";
 
 // Lender accounts (generated via setupLiquidity + generateLenders scripts)
@@ -113,29 +115,40 @@ const EXPENSE_PAYMENT_SOURCES = [
   { id: "bank_transfer", label: "Bank transfer" },
 ];
 
-const BUSINESS_DEBTS = [
-  {
-    id: "debt_001",
-    company: "Kaagapay Microfinance",
-    amount: 1800,
-    due: "Due in 4 days",
-    status: "On time",
-  },
-  {
-    id: "debt_002",
-    company: "Tindahan Capital Co.",
-    amount: 2400,
-    due: "Due in 11 days",
-    status: "Scheduled",
-  },
-];
+const XLM_TO_PHP_RATE = 9.07;
+const USDC_TO_PHP_RATE = 61.45;
+
+function calculateTindahanCash(totalSyncedBenta, xlmBalance, phpcBalance, cashOutTotal = 0) {
+  const benta = Number(totalSyncedBenta || 0);
+  const xlm = Number(xlmBalance || 0);
+  const phpc = Number(phpcBalance || 0);
+  const cashout = Number(cashOutTotal || 0);
+  return Math.max(0, benta + phpc + (xlm * XLM_TO_PHP_RATE) - cashout);
+}
 
 export default function KahaScreen() {
   const router = useRouter();
   const network = useNetworkStatus();
-  const insets = useSafeAreaInsets(); // 4-E: safe area for offline banner
-  const { theme, toggleTheme, colors } = useTheme();
+  const insets = useSafeAreaInsets();
+  const { theme, toggleTheme, colors, hasCompletedOnboarding, onboardingDetails, isLoading: isContextLoading } = useAppContext();
   const [bentaAmount, setBentaAmount] = useState("");
+  
+  // Simulated Cash Out (Off-ramp) States
+  const [cashOutTotal, setCashOutTotal] = useState(0);
+  const [isCashOutModalVisible, setIsCashOutModalVisible] = useState(false);
+  const [cashOutAmount, setCashOutAmount] = useState("");
+  const [selectedProvider, setSelectedProvider] = useState("GCash");
+  const [cashOutStep, setCashOutStep] = useState("form"); // "form" | "connecting" | "interactive" | "broadcasting" | "success"
+  const [cashOutError, setCashOutError] = useState("");
+  const [cashOutTxHash, setCashOutTxHash] = useState("");
+  const [simPhoneNumber, setSimPhoneNumber] = useState("");
+  const [simOtp, setSimOtp] = useState("");
+
+  useEffect(() => {
+    if (!isContextLoading && !hasCompletedOnboarding) {
+      router.replace("/onboarding");
+    }
+  }, [isContextLoading, hasCompletedOnboarding]);
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseSource, setExpenseSource] = useState("cash");
   const [expenses, setExpenses] = useState([]);
@@ -157,7 +170,6 @@ export default function KahaScreen() {
   const [isSyncingOnChain, setIsSyncingOnChain] = useState(false);
   const [phpcBalance, setPhpcBalance] = useState("0.00");
   const [xlmBalance, setXlmBalance] = useState("0.0000");
-  const [xlmToPhpRate, setXlmToPhpRate] = useState(8.50);
   const [isWalletModalVisible, setIsWalletModalVisible] = useState(false);
   const [outstandingBalance, setOutstandingBalance] = useState(0);
   const [showUnlockedModal, setShowUnlockedModal] = useState(false);
@@ -200,10 +212,10 @@ export default function KahaScreen() {
     () => getDraftsReadyForSubmission(offlineDrafts, { isOffline: network.isOffline }),
     [offlineDrafts, network.isOffline],
   );
-  const isLoading = !network.hasCheckedInitialStatus || !isLedgerReady || !isWalletReady;
+  const isLoading = !network.hasCheckedInitialStatus || !isLedgerReady || !isWalletReady || isContextLoading || !hasCompletedOnboarding;
 
   const refreshLedger = useCallback(async () => {
-    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords, liveOutstandingBalance] = await Promise.all([
+    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords, liveOutstandingBalance, savedCashOut] = await Promise.all([
       getPendingSyncQueue(),
       getSyncedSalesLedger(),
       getReceipts(),
@@ -211,6 +223,7 @@ export default function KahaScreen() {
       getOfflineDrafts(),
       getExpenseLedger(),
       getOutstandingLoanBalance(),
+      AsyncStorage.getItem("sarisync:cashOutTotal")
     ]);
     setPendingQueue(queue);
     setSyncedLedger(ledger);
@@ -219,23 +232,23 @@ export default function KahaScreen() {
     setOfflineDrafts(drafts);
     setExpenses(expenseRecords);
     setOutstandingBalance(liveOutstandingBalance);
+    setCashOutTotal(savedCashOut ? Number(savedCashOut) : 0);
 
     if (!network.isOffline) {
       try {
         const wallet = await getWalletConnection();
         if (wallet && wallet.publicKey) {
-          const [profile, balances, rate] = await Promise.all([
+          const [profile, balances] = await Promise.all([
             fetchOnChainProfile(wallet.publicKey).catch((err) => {
               console.error("[SorobanService] Profile query failed:", err);
               return null;
             }),
-            getStoreBalances(wallet.publicKey).catch((err) => {
+            fetchLiveWalletBalances(wallet.publicKey).catch((err) => {
               console.error("[StellarService] Balances query failed:", err);
-              return null;
-            }),
-            fetchXlmToPhpRate().catch((err) => {
-              console.error("[StellarService] Rate query failed:", err);
-              return null;
+              if (err.status === 404 || err.message?.includes("404") || err.name === "NotFoundError") {
+                return { xlm: "0.0000", phpc: "0.0000" };
+              }
+              throw err;
             }),
           ]);
 
@@ -246,9 +259,6 @@ export default function KahaScreen() {
           if (balances) {
             setPhpcBalance(balances.phpc);
             setXlmBalance(balances.xlm);
-          }
-          if (rate) {
-            setXlmToPhpRate(rate);
           }
         }
       } catch (err) {
@@ -602,19 +612,44 @@ export default function KahaScreen() {
       </View>
 
       {/* ─── WALLET BALANCE CARD ─── */}
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, borderRadius: 16 }]}>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, borderRadius: 24 }]}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <View>
+          <View style={{ flex: 1, marginRight: 10 }}>
             <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
               Tindahan Cash (Wallet Balance)
             </Text>
             <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
-              {formatPhp(Number(phpcBalance))}
+              {formatPhp(calculateTindahanCash(totalSyncedBenta, xlmBalance, phpcBalance, cashOutTotal))}
             </Text>
           </View>
-          <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: colors.cardSecondary, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: colors.border }}>
-            <Text style={{ fontSize: 18 }}>🪙</Text>
-          </View>
+          <Pressable
+            accessibilityRole="button"
+            disabled={network.isOffline}
+            onPress={() => {
+              setCashOutAmount("");
+              setCashOutStep("form");
+              setCashOutError("");
+              setCashOutTxHash("");
+              setSimPhoneNumber("");
+              setSimOtp("");
+              setIsCashOutModalVisible(true);
+            }}
+            style={({ pressed }) => [
+              {
+                paddingVertical: 8,
+                paddingHorizontal: 16,
+                borderRadius: 99,
+                backgroundColor: network.isOffline ? colors.border : colors.primary,
+                alignItems: "center",
+                justifyContent: "center",
+              },
+              pressed && !network.isOffline && styles.pressed,
+            ]}
+          >
+            <Text style={{ fontSize: 13, fontWeight: "800", color: network.isOffline ? colors.textSecondary : colors.buttonTextOnPrimary }}>
+              {network.isOffline ? "Offline" : "I-Cash Out 💸"}
+            </Text>
+          </Pressable>
         </View>
 
         <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 12 }} />
@@ -626,7 +661,7 @@ export default function KahaScreen() {
               Pang-transaksyon (XLM Fee Reserve)
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
-              {formatPhp(Number(xlmBalance) * xlmToPhpRate)} ({Number(xlmBalance).toFixed(2)} XLM)
+              {formatPhp(Number(xlmBalance) * XLM_TO_PHP_RATE)} ({Number(xlmBalance).toFixed(2)} XLM)
             </Text>
           </View>
           
@@ -655,7 +690,7 @@ export default function KahaScreen() {
       </View>
 
       {/* ─── STAGE PROGRESS BAR ─── */}
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 14, borderRadius: 12 }]}>
+      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 14, borderRadius: 24 }]}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
             {stage === CREDIT_STAGES.CORNER_STORE
@@ -950,6 +985,279 @@ export default function KahaScreen() {
                 Ipagpatuloy
               </Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Simulated Cash Out Modal */}
+      <Modal
+        visible={isCashOutModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (cashOutStep !== "connecting" && cashOutStep !== "broadcasting") {
+            setIsCashOutModalVisible(false);
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 24 }]}>
+            
+            {cashOutStep === "form" && (
+              <View style={{ gap: 14 }}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>I-Cash Out (Off-Ramp)</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                  I-convert ang iyong Tindahan Cash at ipadala sa iyong personal na account gamit ang Stellar SEP-24 Anchor.
+                </Text>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>Piliin ang Provider</Text>
+                  <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                    {["GCash", "Maya", "BDO", "BPI"].map((p) => {
+                      const isSelected = selectedProvider === p;
+                      return (
+                        <Pressable
+                          key={p}
+                          onPress={() => setSelectedProvider(p)}
+                          style={{
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                            borderRadius: 99,
+                            borderWidth: 1,
+                            borderColor: isSelected ? colors.primary : colors.border,
+                            backgroundColor: isSelected ? colors.primaryContainer : colors.cardSecondary,
+                          }}
+                        >
+                          <Text style={{ fontSize: 13, fontWeight: "700", color: isSelected ? colors.onPrimaryContainer : colors.text }}>{p}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>Halaga ng Cash Out (₱ PHP)</Text>
+                  <TextInput
+                    value={cashOutAmount}
+                    onChangeText={setCashOutAmount}
+                    keyboardType="numeric"
+                    placeholder="Hal. 500"
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
+                  />
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>
+                    {selectedProvider === "GCash" || selectedProvider === "Maya" ? "Numero ng Telepono" : "Numero ng Account"}
+                  </Text>
+                  <TextInput
+                    value={simPhoneNumber}
+                    onChangeText={setSimPhoneNumber}
+                    keyboardType="numeric"
+                    placeholder={selectedProvider === "GCash" || selectedProvider === "Maya" ? "Hal. 09171234567" : "Hal. 1234567890"}
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
+                  />
+                </View>
+
+                {cashOutError ? (
+                  <Text style={{ color: colors.error, fontSize: 12, fontWeight: "700" }}>{cashOutError}</Text>
+                ) : null}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      { flex: 1, backgroundColor: colors.primary, borderRadius: 99 },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={async () => {
+                      setCashOutError("");
+                      const amount = Number(cashOutAmount);
+                      const currentCash = calculateTindahanCash(totalSyncedBenta, xlmBalance, phpcBalance, cashOutTotal);
+                      if (isNaN(amount) || amount <= 0) {
+                        setCashOutError("Paki-lagay ng wastong halaga.");
+                        return;
+                      }
+                      if (amount > currentCash) {
+                        setCashOutError("Kulang ang iyong Tindahan Cash.");
+                        return;
+                      }
+                      if (!simPhoneNumber.trim()) {
+                        setCashOutError("Kailangan ang account/telepono number.");
+                        return;
+                      }
+                      
+                      // Transition to connecting
+                      setCashOutStep("connecting");
+                      setTimeout(() => {
+                        setCashOutStep("interactive");
+                      }, 2000);
+                    }}
+                  >
+                    <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Ipagpatuloy</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      { flex: 1, backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99, marginTop: 0 },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() => setIsCashOutModalVisible(false)}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Kanselahin</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {cashOutStep === "connecting" && (
+              <View style={{ alignItems: "center", paddingVertical: 20, gap: 14 }}>
+                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Kumokonekta sa Anchor...</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>
+                  Sinisimulan ang SEP-24 Cash Out session para sa {selectedProvider}...
+                </Text>
+                <View style={{ marginVertical: 10 }}>
+                  <Text style={{ fontSize: 40 }}>🔌</Text>
+                </View>
+              </View>
+            )}
+
+            {cashOutStep === "interactive" && (
+              <View style={{ gap: 14 }}>
+                <View style={{ backgroundColor: colors.primaryContainer, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.primary }}>
+                  <Text style={{ fontSize: 12, fontWeight: "800", color: colors.onPrimaryContainer }}>GoTyme Interactive Gateway</Text>
+                </View>
+                
+                <Text style={{ fontSize: 14, color: colors.text, lineHeight: 20 }}>
+                  Mangyaring kumpirmahin ang transfer na nagkakahalaga ng <Text style={{ fontWeight: "800", color: colors.primary }}>₱{Number(cashOutAmount).toLocaleString()}</Text> papuntang <Text style={{ fontWeight: "700" }}>{selectedProvider}</Text> ({simPhoneNumber}).
+                </Text>
+                
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary }}>Ipasok ang 6-digit OTP</Text>
+                  <TextInput
+                    value={simOtp}
+                    onChangeText={setSimOtp}
+                    keyboardType="numeric"
+                    maxLength={6}
+                    placeholder="Hal. 123456"
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
+                  />
+                </View>
+
+                {cashOutError ? (
+                  <Text style={{ color: colors.error, fontSize: 12, fontWeight: "700" }}>{cashOutError}</Text>
+                ) : null}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      { flex: 1, backgroundColor: colors.primary, borderRadius: 99 },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() => {
+                      setCashOutError("");
+                      if (!simOtp.trim() || simOtp.length < 4) {
+                        setCashOutError("Paki-lagay ang wastong OTP code.");
+                        return;
+                      }
+                      setCashOutStep("broadcasting");
+                      setTimeout(async () => {
+                        try {
+                          const newAmount = Number(cashOutAmount);
+                          const nextCashOutTotal = cashOutTotal + newAmount;
+                          await AsyncStorage.setItem("sarisync:cashOutTotal", String(nextCashOutTotal));
+                          setCashOutTotal(nextCashOutTotal);
+                          
+                          // Log receipt with type PROVIDER_CASHOUT
+                          const txHash = "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
+                          setCashOutTxHash(txHash);
+
+                          const usdcEquivalent = (newAmount / USDC_TO_PHP_RATE).toFixed(2);
+                          await appendReceipt({
+                            id: "cashout_" + Date.now(),
+                            type: "PROVIDER_CASHOUT",
+                            amountUsdc: usdcEquivalent,
+                            supplierPubkey: selectedProvider,
+                            timestamp: Date.now(),
+                            txHash: txHash
+                          });
+
+                          await refreshLedger();
+                          setCashOutStep("success");
+                        } catch (err) {
+                          setCashOutError("Failed to save transaction: " + err.message);
+                          setCashOutStep("interactive");
+                        }
+                      }, 2000);
+                    }}
+                  >
+                    <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Kumpirmahin at Magbayad</Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      { flex: 1, backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99, marginTop: 0 },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() => setIsCashOutModalVisible(false)}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Kanselahin</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {cashOutStep === "broadcasting" && (
+              <View style={{ alignItems: "center", paddingVertical: 20, gap: 14 }}>
+                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Bino-broadcast ang Transaksyon...</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>
+                  Sumusulat sa Stellar Testnet ledger sa pamamagitan ng GoTyme SEP-24 gateway...
+                </Text>
+                <View style={{ marginVertical: 10 }}>
+                  <Text style={{ fontSize: 40 }}>📡</Text>
+                </View>
+              </View>
+            )}
+
+            {cashOutStep === "success" && (
+              <View style={{ gap: 14, alignItems: "center" }}>
+                <Text style={{ fontSize: 48 }}>🎉</Text>
+                <Text style={[styles.modalTitle, { color: colors.success, textAlign: "center", fontWeight: "900" }]}>Tagumpay ang Cash Out!</Text>
+                
+                <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", lineHeight: 20 }}>
+                  Ang halagang <Text style={{ fontWeight: "800", color: colors.primary }}>₱{Number(cashOutAmount).toLocaleString()}</Text> ay matagumpay na nailipat sa iyong <Text style={{ fontWeight: "700" }}>{selectedProvider}</Text> account.
+                </Text>
+
+                <View style={{ width: "100%", backgroundColor: colors.cardSecondary, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, gap: 6 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary }}>Reference TX Hash</Text>
+                    <Text style={{ fontSize: 11, color: colors.text, fontFamily: "monospace" }}>
+                      {cashOutTxHash.slice(0, 8) + "..." + cashOutTxHash.slice(-8)}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary }}>Account Number</Text>
+                    <Text style={{ fontSize: 11, color: colors.text }}>{simPhoneNumber}</Text>
+                  </View>
+                </View>
+
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary, borderRadius: 99, width: "100%", marginTop: 10 },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => setIsCashOutModalVisible(false)}
+                >
+                  <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Isara</Text>
+                </Pressable>
+              </View>
+            )}
+
           </View>
         </View>
       </Modal>
@@ -1284,17 +1592,17 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                   <Text style={[styles.bodyText, { color: colors.textSecondary, fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
                 </View>
                 <Pressable
-                  disabled={buttonDisabled}
+                  disabled={buttonDisabled || !controlState.canTransact}
                   onPress={() => setSelectedOffer(offer)}
                   style={({ pressed }) => [
                     styles.loanButton,
-                    { backgroundColor: isTooHigh ? colors.border : colors.primary },
-                    pressed && !buttonDisabled && styles.pressed,
-                    buttonDisabled && styles.disabled,
+                    { backgroundColor: isTooHigh || !controlState.canTransact ? colors.border : colors.primary },
+                    pressed && !buttonDisabled && controlState.canTransact && styles.pressed,
+                    (buttonDisabled || !controlState.canTransact) && styles.disabled,
                   ]}
                 >
-                  <Text style={[styles.loanButtonText, { color: isTooHigh ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
-                    {isTooHigh ? "Mataas" : "Humingi"}
+                  <Text style={[styles.loanButtonText, { color: isTooHigh || !controlState.canTransact ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
+                    {!controlState.canTransact ? "Offline" : isTooHigh ? "Mataas" : "Humingi"}
                   </Text>
                 </Pressable>
               </View>
@@ -1430,16 +1738,18 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
             <View style={styles.alignRight}>
               <Text style={[styles.debtAmount, { color: colors.error }]}>{formatPhp(loan.amountPhpDisplay)}</Text>
               <Pressable
-                disabled={isRepaying}
+                disabled={isRepaying || !controlState.canTransact}
                 onPress={() => setConfirmLoan(loan)}
                 style={({ pressed }) => [
                   styles.bayadButton,
-                  { backgroundColor: colors.error },
-                  pressed && styles.pressed,
-                  isRepaying && styles.disabled,
+                  { backgroundColor: !controlState.canTransact ? colors.border : colors.error },
+                  pressed && !isRepaying && controlState.canTransact && styles.pressed,
+                  (isRepaying || !controlState.canTransact) && styles.disabled,
                 ]}
               >
-                <Text style={styles.bayadButtonText}>{controlState.canTransact ? "Bayad" : "Draft"}</Text>
+                <Text style={styles.bayadButtonText}>
+                  {!controlState.canTransact ? "Offline" : "Bayad"}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -1591,10 +1901,14 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
               {receipts.map((receipt) => (
                 <View key={receipt.id} style={[styles.receiptRow, { borderBottomColor: colors.border }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={[styles.rowLabel, { color: colors.text }]}>{receipt.type ?? "B2B_FINANCING"}</Text>
+                    <Text style={[styles.rowLabel, { color: colors.text }]}>
+                      {receipt.type === "PROVIDER_CASHOUT" ? `Off-Ramp (${receipt.supplierPubkey || "Cash Out"})` : (receipt.type ?? "B2B_FINANCING")}
+                    </Text>
                     <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{new Date(receipt.timestamp).toLocaleDateString("en-PH")}</Text>
                   </View>
-                  <Text style={[styles.debtAmount, { color: colors.primary }]}>{formatUsdc(receipt.amountUsdc)}</Text>
+                  <Text style={[styles.debtAmount, { color: receipt.type === "PROVIDER_CASHOUT" ? colors.expense : colors.primary }]}>
+                    {receipt.type === "PROVIDER_CASHOUT" ? "-" + formatPhp(Number(receipt.amountUsdc) * USDC_TO_PHP_RATE) : formatUsdc(receipt.amountUsdc)}
+                  </Text>
                 </View>
               ))}
             </>
@@ -1821,7 +2135,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderColor: "#E0DACF",
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 24,
     padding: 14,
     width: "48%",
     minHeight: 92,
@@ -1840,7 +2154,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F7F4EC",
     borderColor: "#E0DACF",
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 24,
     padding: 12,
     width: "48%",
     gap: 6,
@@ -1853,7 +2167,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderColor: "#E0DACF",
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 24,
     padding: 16,
     gap: 12,
   },
@@ -1877,9 +2191,9 @@ const styles = StyleSheet.create({
   input: {
     borderColor: "#D4CEC1",
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 99,
     minHeight: 48,
-    paddingHorizontal: 14,
+    paddingHorizontal: 20,
     fontSize: 18,
     color: "#17231D",
     backgroundColor: "#FFFEFB",
@@ -1887,10 +2201,11 @@ const styles = StyleSheet.create({
   walletInput: {
     fontSize: 13,
     fontWeight: "700",
+    borderRadius: 12,
   },
   primaryButton: {
     minHeight: 50,
-    borderRadius: 8,
+    borderRadius: 99,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#17231D",
@@ -1902,7 +2217,7 @@ const styles = StyleSheet.create({
   },
   secondaryButton: {
     minHeight: 50,
-    borderRadius: 8,
+    borderRadius: 99,
     alignItems: "center",
     justifyContent: "center",
     borderColor: "#17231D",
@@ -1932,7 +2247,7 @@ const styles = StyleSheet.create({
   rangeButton: {
     flex: 1,
     minHeight: 38,
-    borderRadius: 8,
+    borderRadius: 99,
     borderWidth: 1,
     borderColor: "#D4CEC1",
     alignItems: "center",
@@ -1998,7 +2313,7 @@ const styles = StyleSheet.create({
     gap: 12,
     borderColor: "#EEE8DD",
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: 24,
     padding: 12,
   },
   rowLabel: {
@@ -2035,7 +2350,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderColor: "#D4CEC1",
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: 24,
     padding: 12,
     backgroundColor: "#FAFAF7",
     marginTop: 8,
@@ -2046,7 +2361,7 @@ const styles = StyleSheet.create({
   },
   loanButton: {
     backgroundColor: "#007AFF",
-    borderRadius: 8,
+    borderRadius: 99,
     paddingVertical: 8,
     paddingHorizontal: 14,
     alignItems: "center",
@@ -2058,7 +2373,7 @@ const styles = StyleSheet.create({
   },
   bayadButton: {
     backgroundColor: "#FF3B30",
-    borderRadius: 8,
+    borderRadius: 99,
     paddingVertical: 6,
     paddingHorizontal: 12,
     alignItems: "center",
@@ -2078,16 +2393,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#EEE8DD",
   },
-  input: {
-    borderColor: "#D4CEC1",
-    borderWidth: 1,
-    borderRadius: 8,
-    minHeight: 48,
-    paddingHorizontal: 14,
-    fontSize: 18,
-    color: "#17231D",
-    backgroundColor: "#FFFEFB",
-  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -2097,7 +2402,7 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 14,
+    borderRadius: 24,
     padding: 24,
     width: "100%",
     maxWidth: 420,

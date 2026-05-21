@@ -1,36 +1,5 @@
 export const GRAPH_RANGES = ["year", "month", "week", "day"];
 
-export const SAMPLE_BUSINESS_TRANSACTIONS = [
-  {
-    id: "txn_delivery_001",
-    label: "Delivery supplies",
-    kind: "expense",
-    amount: 1250,
-    status: "Recorded",
-  },
-  {
-    id: "txn_stock_001",
-    label: "Self bought food stocks",
-    kind: "expense",
-    amount: 2100,
-    status: "Recorded",
-  },
-  {
-    id: "txn_capital_001",
-    label: "Inventory capital upgrade",
-    kind: "capital",
-    amount: 3500,
-    status: "Active",
-  },
-  {
-    id: "txn_debt_001",
-    label: "Business debt - microfinance partner",
-    kind: "businessDebt",
-    amount: 1800,
-    status: "Due soon",
-  },
-];
-
 // ── Philippine Standard Time helpers ─────────────────────────────────────────
 
 const PST_OFFSET_MS = 8 * 60 * 60 * 1000; // UTC+8
@@ -105,17 +74,15 @@ export function getOfflineControlState(isOffline) {
 /**
  * Returns a snapshot of business finances.
  *
- * If `receipts` (live AsyncStorage receipts) is non-empty, uses those as the
- * transaction source so the Receipts module reflects real settlements.
- * Falls back to SAMPLE_BUSINESS_TRANSACTIONS for the demo when no real
- * receipts have been recorded yet.
+ * Uses `receipts` (live AsyncStorage receipts) as the transaction source so
+ * the Receipts module reflects real settlements.
  *
  * @param {object[]} salesRecords - Synced sales ledger entries (for earned total)
  * @param {object[]} receipts     - Live receipts from storageService.getReceipts()
  */
 export function getBusinessSnapshot(salesRecords, receipts = []) {
   const earned = sumRecords(salesRecords);
-  const source = receipts.length > 0 ? receipts : SAMPLE_BUSINESS_TRANSACTIONS;
+  const source = receipts;
 
   return source.reduce(
     (snapshot, transaction) => {

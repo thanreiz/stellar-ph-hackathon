@@ -1,0 +1,287 @@
+import React, { createContext, useContext, useState, useEffect } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// Define the 5 color theme palettes matching GoTyme's premium Web2 fintech aesthetic.
+export const THEMES = {
+  // Level 1: Teal (Fresh, organic, clean fintech theme)
+  1: {
+    theme: "light",
+    colors: {
+      background: "#F4F9F6",
+      card: "#FFFFFF",
+      cardSecondary: "#E8F2EC",
+      surfaceLow: "#EDF5F0",
+      surfaceLowest: "#FFFFFF",
+      text: "#102018",
+      textSecondary: "#3D5247",
+      primary: "#006C47",
+      primaryContainer: "#A2F8D3",
+      onPrimaryContainer: "#002112",
+      secondary: "#4D6257",
+      tertiary: "#1976D2",
+      expense: "#D97706",
+      success: "#006C47",
+      error: "#B91C1C",
+      errorContainer: "#FEE2E2",
+      onErrorContainer: "#7F1D1D",
+      proofBackground: "#EDFDF5",
+      buttonTextOnPrimary: "#FFFFFF",
+      border: "#C1D1C8",
+      shadow: "rgba(0, 108, 71, 0.08)",
+      mintContainer: "#A2F8D3",
+      statusDefault: "#6B7280",
+    }
+  },
+  // Level 2: Orange (High contrast, modern premium look)
+  2: {
+    theme: "light",
+    colors: {
+      background: "#FFFBF7",
+      card: "#FFFFFF",
+      cardSecondary: "#FDF2E9",
+      surfaceLow: "#FAEAE1",
+      surfaceLowest: "#FFFFFF",
+      text: "#201A15",
+      textSecondary: "#5A4B40",
+      primary: "#D95400",
+      primaryContainer: "#FFDBCB",
+      onPrimaryContainer: "#2F0D00",
+      secondary: "#6F5D54",
+      tertiary: "#0284C7",
+      expense: "#EA580C",
+      success: "#15803D",
+      error: "#B91C1C",
+      errorContainer: "#FEE2E2",
+      onErrorContainer: "#7F1D1D",
+      proofBackground: "#FFF6F0",
+      buttonTextOnPrimary: "#FFFFFF",
+      border: "#E6D0C4",
+      shadow: "rgba(217, 84, 0, 0.08)",
+      mintContainer: "#FFDBCB",
+      statusDefault: "#6B7280",
+    }
+  },
+  // Level 3: GoTyme Blue (Authentic GoTyme branding feel)
+  3: {
+    theme: "light",
+    colors: {
+      background: "#F6F8FC",
+      card: "#FFFFFF",
+      cardSecondary: "#EBF1FA",
+      surfaceLow: "#E1EBF5",
+      surfaceLowest: "#FFFFFF",
+      text: "#0F172A",
+      textSecondary: "#475569",
+      primary: "#1E40AF",
+      primaryContainer: "#DBEAFE",
+      onPrimaryContainer: "#1E3A8A",
+      secondary: "#475569",
+      tertiary: "#0D9488",
+      expense: "#EA580C",
+      success: "#16A34A",
+      error: "#DC2626",
+      errorContainer: "#FEE2E2",
+      onErrorContainer: "#7F1D1D",
+      proofBackground: "#EFF6FF",
+      buttonTextOnPrimary: "#FFFFFF",
+      border: "#CBD5E1",
+      shadow: "rgba(30, 64, 175, 0.08)",
+      mintContainer: "#DBEAFE",
+      statusDefault: "#64748B",
+    }
+  },
+  // Level 4: Purple (Vibrant regal purple)
+  4: {
+    theme: "light",
+    colors: {
+      background: "#FAF8FC",
+      card: "#FFFFFF",
+      cardSecondary: "#F3EEFA",
+      surfaceLow: "#ECE4F5",
+      surfaceLowest: "#FFFFFF",
+      text: "#1A0F2B",
+      textSecondary: "#524566",
+      primary: "#6D28D9",
+      primaryContainer: "#EDE9FE",
+      onPrimaryContainer: "#4C1D95",
+      secondary: "#5C527F",
+      tertiary: "#0D9488",
+      expense: "#EAB308",
+      success: "#16A34A",
+      error: "#DC2626",
+      errorContainer: "#FEE2E2",
+      onErrorContainer: "#7F1D1D",
+      proofBackground: "#F5F3FF",
+      buttonTextOnPrimary: "#FFFFFF",
+      border: "#D1C7E0",
+      shadow: "rgba(109, 40, 217, 0.08)",
+      mintContainer: "#EDE9FE",
+      statusDefault: "#71717A",
+    }
+  },
+  // Level 5: Maribank Dark Mode (Ultra premium dark charcoal and steel navy theme)
+  5: {
+    theme: "dark",
+    colors: {
+      background: "#0B0F19",
+      card: "#151B2C",
+      cardSecondary: "#1E2538",
+      surfaceLow: "#1F293D",
+      surfaceLowest: "#0B0E14",
+      text: "#F8FAFC",
+      textSecondary: "#94A3B8",
+      primary: "#38BDF8",
+      primaryContainer: "#0369A1",
+      onPrimaryContainer: "#E0F2FE",
+      secondary: "#64748B",
+      tertiary: "#34D399",
+      expense: "#F59E0B",
+      success: "#10B981",
+      error: "#EF4444",
+      errorContainer: "#7F1D1D",
+      onErrorContainer: "#FEE2E2",
+      proofBackground: "#1E293B",
+      buttonTextOnPrimary: "#0F172A",
+      border: "#334155",
+      shadow: "rgba(0, 0, 0, 0.5)",
+      mintContainer: "#0369A1",
+      statusDefault: "#475569",
+    }
+  }
+};
+
+const AppContext = createContext({
+  hasCompletedOnboarding: false,
+  onboardingDetails: null,
+  userLevel: 1,
+  theme: "light",
+  colors: THEMES[1].colors,
+  isLoading: true,
+  setUserLevel: async () => {},
+  completeOnboarding: async () => {},
+  clearOnboarding: async () => {},
+});
+
+export function AppProvider({ children }) {
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
+  const [onboardingDetails, setOnboardingDetails] = useState(null);
+  const [userLevel, setUserLevelState] = useState(1);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadInitialData() {
+      try {
+        const completed = await AsyncStorage.getItem("sarisync:hasCompletedOnboarding");
+        const detailsRaw = await AsyncStorage.getItem("sarisync:onboardingDetails");
+        const savedLevel = await AsyncStorage.getItem("sarisync:userLevel");
+
+        if (completed === "true") {
+          setHasCompletedOnboarding(true);
+        }
+
+        if (detailsRaw) {
+          const parsedDetails = JSON.parse(detailsRaw);
+          setOnboardingDetails(parsedDetails);
+          if (parsedDetails.level) {
+            setUserLevelState(Number(parsedDetails.level));
+          }
+        } else if (savedLevel) {
+          setUserLevelState(Number(savedLevel));
+        }
+      } catch (error) {
+        console.error("[AppContext] Failed to load onboarding state", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadInitialData();
+  }, []);
+
+  async function setUserLevel(level) {
+    const numericLevel = Number(level);
+    if (numericLevel < 1 || numericLevel > 5) return;
+    setUserLevelState(numericLevel);
+    try {
+      await AsyncStorage.setItem("sarisync:userLevel", String(numericLevel));
+      if (onboardingDetails) {
+        const updatedDetails = { ...onboardingDetails, level: numericLevel };
+        setOnboardingDetails(updatedDetails);
+        await AsyncStorage.setItem("sarisync:onboardingDetails", JSON.stringify(updatedDetails));
+      }
+    } catch (e) {
+      console.error("[AppContext] Failed to save level", e);
+    }
+  }
+
+  async function completeOnboarding(details) {
+    try {
+      await AsyncStorage.setItem("sarisync:hasCompletedOnboarding", "true");
+      await AsyncStorage.setItem("sarisync:onboardingDetails", JSON.stringify(details));
+      await AsyncStorage.setItem("sarisync:userLevel", String(details.level));
+      
+      // Also automatically save the connected Freighter/Stellar wallet connection to storage Service
+      const walletConnection = {
+        walletName: "Freighter Gate",
+        publicKey: details.publicKey.trim(),
+        network: "TESTNET",
+        connectedAt: new Date().toISOString(),
+      };
+      await AsyncStorage.setItem("sarisync:walletConnection", JSON.stringify(walletConnection));
+
+      setHasCompletedOnboarding(true);
+      setOnboardingDetails(details);
+      setUserLevelState(Number(details.level));
+    } catch (error) {
+      console.error("[AppContext] Failed to save onboarding details", error);
+      throw error;
+    }
+  }
+
+  async function clearOnboarding() {
+    try {
+      await AsyncStorage.multiRemove([
+        "sarisync:hasCompletedOnboarding",
+        "sarisync:onboardingDetails",
+        "sarisync:userLevel",
+        "sarisync:walletConnection"
+      ]);
+      setHasCompletedOnboarding(false);
+      setOnboardingDetails(null);
+      setUserLevelState(1);
+    } catch (e) {
+      console.error("[AppContext] Failed to clear onboarding", e);
+    }
+  }
+
+  const activeTheme = THEMES[userLevel] || THEMES[1];
+
+  // Cycling theme utility: lets components toggle between themes
+  async function cycleTheme() {
+    const nextLevel = userLevel === 5 ? 1 : userLevel + 1;
+    await setUserLevel(nextLevel);
+  }
+
+  return (
+    <AppContext.Provider
+      value={{
+        hasCompletedOnboarding,
+        onboardingDetails,
+        userLevel,
+        theme: activeTheme.theme,
+        colors: activeTheme.colors,
+        isLoading,
+        setUserLevel,
+        completeOnboarding,
+        clearOnboarding,
+        toggleTheme: cycleTheme, // keep the same toggleTheme name but make it cycle
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+}
+
+export function useAppContext() {
+  return useContext(AppContext);
+}

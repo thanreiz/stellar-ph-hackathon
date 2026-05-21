@@ -30,18 +30,28 @@ import {
   getTotalSyncedSalesVolume,
   getOutstandingLoanBalance,
   setOutstandingLoanBalance,
+  getWalletConnection,
+  appendLoan,
+  getLoans,
 } from "../services/storageService";
 import {
   OFFLINE_DRAFT_TYPES,
   createOfflineDraft,
 } from "../services/offlineDraftService";
-import { submitInventoryFinancingSettlement } from "../services/stellarService";
+import {
+  submitInventoryFinancingSettlement,
+  receiveLoanFromLender,
+  fetchLiveWalletBalances,
+} from "../services/stellarService";
 import { formatPhp, formatPublicKey, formatUsdc } from "../utils/formatters";
-import { useTheme } from "../context/ThemeContext";
+import { useAppContext } from "../context/AppContext";
 
+
+const XLM_TO_PHP_RATE = 9.07;
+const USDC_TO_PHP_RATE = 61.45;
 
 export default function ScannerScreen() {
-  const { theme, toggleTheme, colors } = useTheme();
+  const { theme, toggleTheme, colors } = useAppContext();
   const network = useNetworkStatus();
   const [permission, requestPermission] = useCameraPermissions();
   const [totalSyncedBenta, setTotalSyncedBenta] = useState(0);
@@ -57,21 +67,119 @@ export default function ScannerScreen() {
   // Flow steps for the presentation flow: "scan" | "detail" | "success"
   const [currentStep, setCurrentStep] = useState("scan");
 
+  // Wallet and balance states
+  const [walletConnection, setWalletConnection] = useState(null);
+  const [xlmBalance, setXlmBalance] = useState("0.0000");
+  const [phpcBalance, setPhpcBalance] = useState("0.00");
+  const [cashOutTotal, setCashOutTotal] = useState(0);
+  const [outstandingBalance, setOutstandingBalance] = useState(0);
+  const [lastStage, setLastStageState] = useState(null);
+
+  // Shortfall warning modal state
+  const [showShortfallModal, setShowShortfallModal] = useState(false);
+
   const stage = useMemo(() => evaluateCreditStage(totalSyncedBenta), [totalSyncedBenta]);
   const stageMeta = getStageMetadata(stage);
   const loanLimit = getLoanLimitForStage(stage);
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
-  const eligibility = useMemo(
-    () => evaluateInvoiceEligibility(invoice, stage, loanLimit),
-    [invoice, stage, loanLimit],
-  );
+
+  // Calculate Tindahan Cash
+  const tindahanCash = useMemo(() => {
+    const benta = Number(totalSyncedBenta || 0);
+    const xlm = Number(xlmBalance || 0);
+    const phpc = Number(phpcBalance || 0);
+    const cashout = Number(cashOutTotal || 0);
+    return Math.max(0, benta + phpc + (xlm * XLM_TO_PHP_RATE) - cashout);
+  }, [totalSyncedBenta, xlmBalance, phpcBalance, cashOutTotal]);
+
+  // Compute Total Bill Amount in PHP
+  const totalAmountPhp = useMemo(() => {
+    return invoice ? invoice.amount_usdc * USDC_TO_PHP_RATE : 0;
+  }, [invoice]);
+
+  // Compute shortfall in PHP
+  const shortfallPhp = useMemo(() => {
+    return Math.max(0, totalAmountPhp - tindahanCash);
+  }, [totalAmountPhp, tindahanCash]);
+
+  // Evaluate remaining credit limit
+  const remainingBorrowCapacity = useMemo(() => {
+    return Math.max(0, loanLimit - outstandingBalance);
+  }, [loanLimit, outstandingBalance]);
+
+  // Check eligibility for borrowing shortfall
+  const canBorrowShortfall = useMemo(() => {
+    return stage !== CREDIT_STAGES.READ_ONLY && shortfallPhp <= remainingBorrowCapacity;
+  }, [stage, shortfallPhp, remainingBorrowCapacity]);
+
+  // BR5: check if drop-locked
+  const isDropLocked = useMemo(() => {
+    return (
+      lastStage === CREDIT_STAGES.CORNER_STORE &&
+      stage !== CREDIT_STAGES.CORNER_STORE &&
+      outstandingBalance > loanLimit
+    );
+  }, [lastStage, stage, outstandingBalance, loanLimit]);
+
+  // Ultimate check for checkout eligibility
+  const isCheckoutEligible = useMemo(() => {
+    if (!invoice) return false;
+    if (shortfallPhp === 0) return true; // Standard checkout using own cash is allowed
+    if (isDropLocked) return false;
+    return canBorrowShortfall;
+  }, [invoice, shortfallPhp, isDropLocked, canBorrowShortfall]);
+
+  const fundingProgressPercent = totalAmountPhp > 0 ? Math.min(100, Math.round((tindahanCash / totalAmountPhp) * 100)) : 100;
 
   useFocusEffect(
     useCallback(() => {
-      getTotalSyncedSalesVolume()
-        .then(setTotalSyncedBenta)
-        .catch((error) => setScanError(error.message));
-    }, []),
+      let isMounted = true;
+      async function refreshState() {
+        try {
+          const [salesVol, connection, outstanding, savedCashOut, savedLastStage] = await Promise.all([
+            getTotalSyncedSalesVolume(),
+            getWalletConnection(),
+            getOutstandingLoanBalance(),
+            AsyncStorage.getItem("sarisync:cashOutTotal"),
+            AsyncStorage.getItem("sarisync:lastStage")
+          ]);
+          
+          if (!isMounted) return;
+          setTotalSyncedBenta(salesVol);
+          setWalletConnection(connection);
+          setOutstandingBalance(outstanding);
+          setCashOutTotal(savedCashOut ? Number(savedCashOut) : 0);
+          setLastStageState(savedLastStage);
+
+          if (!network.isOffline && connection && connection.publicKey) {
+            try {
+              const balances = await fetchLiveWalletBalances(connection.publicKey);
+              if (isMounted && balances) {
+                setPhpcBalance(balances.phpc);
+                setXlmBalance(balances.xlm);
+              }
+            } catch (err) {
+              console.error("[ScannerScreen] Failed to fetch balances:", err);
+              if (err.status === 404 || err.message?.includes("404") || err.name === "NotFoundError") {
+                if (isMounted) {
+                  setPhpcBalance("0.00");
+                  setXlmBalance("0.0000");
+                }
+              }
+            }
+          }
+        } catch (error) {
+          if (isMounted) {
+            setScanError(error.message);
+          }
+        }
+      }
+
+      refreshState();
+      return () => {
+        isMounted = false;
+      };
+    }, [network.isOffline]),
   );
 
   // Laser pulsing and translation animation
@@ -122,62 +230,90 @@ export default function ScannerScreen() {
     }
   }
 
-  async function handleSettleInvoice() {
-    if (!invoice || !eligibility.eligible) return;
-    if (isSettling) return;
+  async function handleMagbayadNgSupply() {
+    if (!invoice || !isCheckoutEligible) return;
+    if (network.isOffline) return;
 
+    if (shortfallPhp > 0) {
+      setShowShortfallModal(true);
+    } else {
+      await proceedSettleInvoice(false, 0);
+    }
+  }
+
+  async function proceedSettleInvoice(borrowShortfall, borrowAmount) {
+    if (isSettling) return;
     setIsSettling(true);
+    setScanError("");
     setSettlementResult(null);
     setDraftMessage("");
 
     try {
-      if (network.isOffline) {
-        await appendOfflineDraft(createOfflineDraft({
-          type: OFFLINE_DRAFT_TYPES.SUPPLIER_INVOICE,
-          amountUsdc: invoice.amount_usdc,
-          amountPhpc: loanLimit,
-          destinationPublicKey: invoice.supplier_pubkey,
-          supplierPubkey: invoice.supplier_pubkey,
-        }));
-        setDraftMessage("Saved supplier invoice draft. Submit when online.");
-        setCurrentStep("success");
-      } else {
-        const result = await submitInventoryFinancingSettlement({
-          invoiceId: "INV-2024-089",
-          amountUsdc: invoice.amount_usdc,
-          supplierPubkey: invoice.supplier_pubkey,
+      let loanTxHash = "";
+      if (borrowShortfall) {
+        // Step 1: Execute microlender transaction
+        const lenderSecret = "SDXGZJ7JQWRM5ZVQLXJDG553W4RU3RN7HSZXYF7CPCLWYHTCQ6NXYIO3"; // Kaagapay Microfinance
+        const loanResult = await receiveLoanFromLender({
+          lenderSecretKey: lenderSecret,
+          amountPhpc: borrowAmount,
+          borrowerPublicKey: walletConnection?.publicKey,
         });
 
-        if (!result.success) {
-          throw new Error(result.error || "Horizon submission failed");
+        if (!loanResult.success) {
+          throw new Error(`Bigo ang hiram sa Kaagapay: ${loanResult.error}`);
         }
 
-        await appendReceipt({
-          id: result.transactionHash,
-          type: 'FINANCING',
-          amountUsdc: invoice.amount_usdc,
-          supplierPubkey: invoice.supplier_pubkey,
-          txHash: result.transactionHash,
+        loanTxHash = loanResult.transactionHash;
+
+        // Save loan record locally
+        const loanRecord = {
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2),
+          lenderName: "Kaagapay Microfinance",
+          lenderPublicKey: "GAFLJJXR63KPK6UWVCXR34GL5G2F34TUX2ETCGU3SC6ASY6LRIBD3BCB",
+          amountPhpc: borrowAmount,
+          amountPhpDisplay: borrowAmount,
+          txHash: loanTxHash,
           timestamp: Date.now(),
-        });
+          status: "active",
+        };
+        await appendLoan(loanRecord);
 
+        // Update outstanding loan balance
         const currentOutstanding = await getOutstandingLoanBalance();
-        await setOutstandingLoanBalance(currentOutstanding + (invoice.amount_usdc * 52));
-
-        setSettlementResult(result);
-        setCurrentStep("success");
+        await setOutstandingLoanBalance(currentOutstanding + borrowAmount);
       }
+
+      // Step 2: Settle invoice via pathPaymentStrictReceive
+      // sendMaxPhpc requires a numeric string
+      const sendMaxStr = (invoice.amount_usdc * USDC_TO_PHP_RATE * 1.05).toFixed(2);
+      const result = await submitInventoryFinancingSettlement({
+        supplierPubkey: invoice.supplier_pubkey,
+        amountUsdc: invoice.amount_usdc,
+        sendMaxPhpc: sendMaxStr,
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || "Horizon submission failed");
+      }
+
+      // Append receipt log
+      await appendReceipt({
+        id: result.transactionHash,
+        type: 'FINANCING',
+        amountUsdc: invoice.amount_usdc,
+        supplierPubkey: invoice.supplier_pubkey,
+        txHash: result.transactionHash,
+        timestamp: Date.now(),
+      });
+
+      setSettlementResult(result);
+      setCurrentStep("success");
     } catch (e) {
       setScanError(e.message);
     } finally {
       setIsSettling(false);
     }
   }
-
-  const totalAmountPhp = invoice ? invoice.amount_usdc * 52 : 0;
-  const creditLineApproved = invoice ? Math.min(totalAmountPhp, loanLimit) : 0;
-  const ownerCashRequired = invoice ? Math.max(0, totalAmountPhp - loanLimit) : 0;
-  const fundingProgressPercent = totalAmountPhp > 0 ? Math.round((creditLineApproved / totalAmountPhp) * 100) : 100;
 
   // STEP 1: CAMERA SCAN SCREEN
   if (currentStep === "scan") {
@@ -214,7 +350,7 @@ export default function ScannerScreen() {
                 style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.primary, borderRadius: 99, width: 200 }, pressed && styles.pressed]}
                 onPress={requestPermission}
               >
-                <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Enable Camera</Text>
+                <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>Enable Camera</Text>
               </Pressable>
             </View>
           ) : (
@@ -286,7 +422,7 @@ export default function ScannerScreen() {
                   }
                 }}
               >
-                <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Simulate QR Scan</Text>
+                <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>Simulate QR Scan</Text>
               </Pressable>
 
               <Pressable
@@ -317,7 +453,7 @@ export default function ScannerScreen() {
         {/* Mali ang QR Code Modal */}
         <Modal visible={showQrError} transparent animationType="fade">
           <View style={styles.modalOverlay}>
-            <View style={[styles.errorModal, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <View style={[styles.errorModal, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 24 }]}>
               <Text style={[styles.errorTitle, { color: colors.error }]}>Mali ang QR Code</Text>
               <Text style={[styles.errorBody, { color: colors.textSecondary }]}>
                 I-check ang QR code ng supplier at subukan ulit.
@@ -325,7 +461,7 @@ export default function ScannerScreen() {
               <Pressable
                 style={({ pressed }) => [
                   styles.errorButton,
-                  { backgroundColor: colors.primary, minHeight: 48, justifyContent: "center", borderRadius: 8 },
+                  { backgroundColor: colors.primary, minHeight: 48, justifyContent: "center", borderRadius: 99 },
                   pressed && styles.pressed,
                 ]}
                 onPress={() => {
@@ -333,7 +469,7 @@ export default function ScannerScreen() {
                   setScanned(false);
                 }}
               >
-                <Text style={[styles.errorButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>OK</Text>
+                <Text style={[styles.errorButtonText, { color: colors.buttonTextOnPrimary }]}>OK</Text>
               </Pressable>
             </View>
           </View>
@@ -361,7 +497,7 @@ export default function ScannerScreen() {
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 130, gap: 16 }}>
           {/* Status Header Card */}
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 24, alignItems: "center", borderRadius: 16 }]}>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 24, alignItems: "center", borderRadius: 24 }]}>
             <View style={[styles.iconCircle, { backgroundColor: theme === "light" ? "#A6F8B4" : "#0d6f37", marginBottom: 12 }]}>
               <Text style={{ fontSize: 24 }}>📄</Text>
             </View>
@@ -380,7 +516,7 @@ export default function ScannerScreen() {
           </View>
 
           {/* Kwalipikasyon para sa Pondo Bento section */}
-          <View style={[styles.card, { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 16 }]}>
+          <View style={[styles.card, { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 24 }]}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
               <Text style={{ fontSize: 18 }}>🛡️</Text>
               <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>Kwalipikasyon para sa Pondo</Text>
@@ -389,7 +525,7 @@ export default function ScannerScreen() {
             {/* Progress bar */}
             <View style={{ gap: 6, marginBottom: 16 }}>
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600" }}>Funding Progress</Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "600" }}>Cash Coverage Progress</Text>
                 <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "800" }}>{fundingProgressPercent}% Ready</Text>
               </View>
               <View style={{ height: 8, width: "100%", backgroundColor: colors.border, borderRadius: 99, overflow: "hidden" }}>
@@ -399,16 +535,16 @@ export default function ScannerScreen() {
 
             {/* Bento tiles */}
             <View style={{ flexDirection: "row", gap: 10, marginBottom: 12 }}>
-              <View style={[styles.bentoTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Credit Line</Text>
-                <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>{formatPhp(creditLineApproved)}</Text>
-                <Text style={{ fontSize: 10, color: colors.primary, fontWeight: "700", marginTop: 4 }}>✓ APPROVED</Text>
+              <View style={[styles.bentoTile, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 16 }]}>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Tindahan Cash</Text>
+                <Text style={{ fontSize: 15, fontWeight: "800", color: colors.primary }}>{formatPhp(tindahanCash)}</Text>
+                <Text style={{ fontSize: 10, color: colors.primary, fontWeight: "700", marginTop: 4 }}>✓ Available</Text>
               </View>
-              <View style={[styles.bentoTile, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Owner Cash</Text>
-                <Text style={{ fontSize: 15, fontWeight: "800", color: colors.error }}>{formatPhp(ownerCashRequired)}</Text>
-                <Text style={{ fontSize: 10, color: ownerCashRequired > 0 ? colors.error : colors.textSecondary, fontWeight: "700", marginTop: 4 }}>
-                  {ownerCashRequired > 0 ? "⚠ REQUIRED" : "✓ NOT REQUIRED"}
+              <View style={[styles.bentoTile, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: 16 }]}>
+                <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: "700" }}>Shortfall (Kulang)</Text>
+                <Text style={{ fontSize: 15, fontWeight: "800", color: shortfallPhp > 0 ? colors.error : colors.textSecondary }}>{formatPhp(shortfallPhp)}</Text>
+                <Text style={{ fontSize: 10, color: shortfallPhp > 0 ? colors.error : colors.primary, fontWeight: "700", marginTop: 4 }}>
+                  {shortfallPhp > 0 ? "⚠ KULANG" : "✓ WALANG KULANG"}
                 </Text>
               </View>
             </View>
@@ -419,7 +555,7 @@ export default function ScannerScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>Secure Blockchain Settlement</Text>
                 <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 1, lineHeight: 13 }}>
-                  Ito ay ise-settle sa pamamagitan ng Stellar Testnet para sa mabilis at ligtas na transaksyon.
+                  Ito ay ise-settle sa pamamagitan ng Stellar Testnet para sa mabilis at ligtas na B2B settlement.
                 </Text>
               </View>
             </View>
@@ -436,6 +572,27 @@ export default function ScannerScreen() {
             Pansinin: Ang utang ay may 2% interest rate kada buwan kung hindi mababayaran sa takdang panahon.
           </Text>
 
+          {/* Error messages detailing why checkout might be disabled */}
+          {stage === CREDIT_STAGES.READ_ONLY && shortfallPhp > 0 ? (
+            <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginTop: 8, borderRadius: 16 }]}>
+              <Text style={[styles.errorText, { color: colors.error, textAlign: "center", lineHeight: 18 }]}>
+                🔒 Hindi ma-access ang supplier financing. Mag-record pa ng benta sa Kaha dashboard para ma-unlock ang credit line (kailangan ng hindi bababa sa ₱5,000 kabuuang benta).
+              </Text>
+            </View>
+          ) : isDropLocked && shortfallPhp > 0 ? (
+            <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginTop: 8, borderRadius: 16 }]}>
+              <Text style={[styles.errorText, { color: colors.error, textAlign: "center", lineHeight: 18 }]}>
+                🔒 Hindi pwede mag-utang muna. Babaan muna ang natitirang utang bago makakuha ng bagong financing.
+              </Text>
+            </View>
+          ) : shortfallPhp > remainingBorrowCapacity ? (
+            <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginTop: 8, borderRadius: 16 }]}>
+              <Text style={[styles.errorText, { color: colors.error, textAlign: "center", lineHeight: 18 }]}>
+                ⚠ Ang kulang na {formatPhp(shortfallPhp)} ay lumalagpas sa iyong natitirang limit sa utang ({formatPhp(remainingBorrowCapacity)}). Magbayad muna ng ibang utang para ma-unlock.
+              </Text>
+            </View>
+          ) : null}
+
           {scanError ? (
             <View style={[styles.errorCard, { backgroundColor: colors.errorContainer, borderColor: colors.error, marginTop: 8 }]}>
               <Text style={[styles.errorText, { color: colors.error }]}>{scanError}</Text>
@@ -446,17 +603,17 @@ export default function ScannerScreen() {
         {/* Sticky bottom buttons */}
         <View style={[styles.stickyFooter, { backgroundColor: colors.card, borderTopColor: colors.border }]}>
           <Pressable
-            disabled={!eligibility.eligible || isSettling}
+            disabled={network.isOffline || isSettling || !isCheckoutEligible}
             style={({ pressed }) => [
               styles.primaryButton,
               { backgroundColor: colors.primary, borderRadius: 99 },
               pressed && styles.pressed,
-              (!eligibility.eligible || isSettling) && styles.disabled,
+              (network.isOffline || isSettling || !isCheckoutEligible) && styles.disabled,
             ]}
-            onPress={handleSettleInvoice}
+            onPress={handleMagbayadNgSupply}
           >
-            <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-              {isSettling ? "Sine-save..." : network.isOffline ? "Save offline draft" : "Pondohan ang Upgrade"}
+            <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>
+              {network.isOffline ? "Offline" : isSettling ? "Nagbabayad..." : "Magbayad ng Supply"}
             </Text>
           </Pressable>
 
@@ -466,11 +623,57 @@ export default function ScannerScreen() {
               { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99 },
               pressed && styles.pressed,
             ]}
-            onPress={() => router.back()}
+            onPress={() => setCurrentStep("scan")}
           >
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Utangin ang Kulang</Text>
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Bumalik sa Pag-scan</Text>
           </Pressable>
         </View>
+
+        {/* Shortfall Warning Modal */}
+        <Modal visible={showShortfallModal} transparent animationType="slide">
+          <View style={styles.modalOverlay}>
+            <View style={[styles.errorModal, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 24 }]}>
+              <Text style={{ fontSize: 32, textAlign: "center", marginBottom: 12 }}>💸</Text>
+              <Text style={[styles.errorTitle, { color: colors.primary, textAlign: "center" }]}>Kulang ng {formatPhp(shortfallPhp)}</Text>
+              <Text style={[styles.errorBody, { color: colors.textSecondary, marginTop: 8 }]}>
+                Ang iyong Tindahan Cash ay hindi sapat para bayaran ang supply. Gusto mo bang utangin ang kulang na {formatPhp(shortfallPhp)} sa Kaagapay Microfinance?
+              </Text>
+              
+              <View style={{ width: "100%", gap: 10, marginTop: 20 }}>
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary, borderRadius: 99 },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => {
+                    setShowShortfallModal(false);
+                    proceedSettleInvoice(true, shortfallPhp);
+                  }}
+                >
+                  <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>
+                    Oo, utangin at magbayad
+                  </Text>
+                </Pressable>
+                
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.secondaryButton,
+                    { backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99 },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => {
+                    setShowShortfallModal(false);
+                  }}
+                >
+                  <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+                    Kanselahin
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -499,7 +702,7 @@ export default function ScannerScreen() {
           </View>
 
           {/* Receipt card element */}
-          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, width: "100%", padding: 0, overflow: "hidden", borderRadius: 16, elevation: 4 }]}>
+          <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, width: "100%", padding: 0, overflow: "hidden", borderRadius: 24, elevation: 4 }]}>
             {/* Top outline indicator */}
             <View style={{ height: 6, backgroundColor: colors.primary, opacity: 0.5 }} />
 
@@ -556,7 +759,7 @@ export default function ScannerScreen() {
               alert("Gumawa ng Dokumento: Resibo ay matagumpay na na-download sa storage!");
             }}
           >
-            <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Gumawa ng Dokumento</Text>
+            <Text style={[styles.primaryButtonText, { color: colors.buttonTextOnPrimary }]}>Gumawa ng Dokumento</Text>
           </Pressable>
 
           <Pressable
@@ -574,7 +777,7 @@ export default function ScannerScreen() {
 }
 
 function Row({ label, value }) {
-  const { colors } = useTheme();
+  const { colors } = useAppContext();
   return (
     <View style={styles.row}>
       <Text style={[styles.rowLabel, { color: colors.textSecondary }]}>{label}</Text>
