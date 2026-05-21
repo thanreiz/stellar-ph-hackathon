@@ -102,12 +102,12 @@ describe("mobile demo configuration", () => {
     assert.match(scanner, /appendOfflineDraft/);
   });
 
-  it("tracks expenses with cash and digital bank payment sources", () => {
+  it("tracks expenses with approved Filipino-friendly payment sources", () => {
     const source = readProjectFile("app/index.js");
     const storage = readProjectFile("services/storageService.js");
 
-    assertIncludes(source, "Record Expenses");
-    assertIncludes(source, "Payment Method");
+    assertIncludes(source, "Gastos");
+    assertIncludes(source, "Pinambayad");
     assertExcludes(source, "Log expense", "Old default expense card label should be replaced.");
     assertExcludes(source, "Expense source", "Old default payment source label should be replaced.");
     assert.match(source, /Cash/);
@@ -126,13 +126,13 @@ describe("mobile demo configuration", () => {
     assert.match(source, /Online ledger hidden until internet returns/);
   });
 
-  it("defines Division 1 Choice A polished mobile shell labels and icons", () => {
+  it("uses approved Choice A Filipino fintech nav labels and icons", () => {
     const source = readProjectFile("app/index.js");
     const uiSource = readProjectFile("components/SariSyncUI.js");
 
-    assertMatches(source, /label:\s*"Cash"/, "Expected Kaha tab label.");
+    assertMatches(source, /label:\s*"Kaha"/, "Expected Kaha tab label.");
     assertMatches(source, /label:\s*"Tracker"/, "Expected Tracker tab label.");
-    assertMatches(source, /label:\s*"Debt"/, "Expected Utang tab label.");
+    assertMatches(source, /label:\s*"Utang"/, "Expected Utang tab label.");
     assertMatches(source, /label:\s*"Proof"/, "Expected Proof tab label.");
     assertMatches(source, /icon:\s*"wallet"/, "Expected wallet nav icon.");
     assertMatches(source, /icon:\s*"trend"/, "Expected trend nav icon.");
@@ -142,15 +142,16 @@ describe("mobile demo configuration", () => {
     assertIncludes(uiSource, "function AppIcon");
   });
 
-  it("uses polished English metrics and expense card treatment for Choice A", () => {
+  it("uses big Filipino-friendly dashboard metrics", () => {
     const source = readProjectFile("app/index.js");
     const uiSource = readProjectFile("components/SariSyncUI.js");
     const metricCardUsages = source.match(/<BentoMetricCard\b/g) ?? [];
 
-    assertIncludes(source, "Sales Today");
-    assertIncludes(source, "Expenses");
-    assertIncludes(source, "Trust Score");
-    assertIncludes(source, "Credit Limit");
+    assertIncludes(source, "Benta");
+    assertIncludes(source, "Gastos");
+    assertIncludes(source, "Tiwala Score");
+    assertIncludes(source, "Limit");
+    assertIncludes(source, "Tindahan Cash");
     assert.ok(
       metricCardUsages.length >= 4,
       `Expected at least four BentoMetricCard usages, found ${metricCardUsages.length}.`,
@@ -159,18 +160,56 @@ describe("mobile demo configuration", () => {
     assertIncludes(uiSource, "expense");
   });
 
-  it("keeps proof details hidden behind a friendly document flow", () => {
+  it("uses friendly onboarding copy for store profile and wallet setup", () => {
+    const onboarding = readProjectFile("app/onboarding.js");
+
+    assertIncludes(onboarding, "Store Profile");
+    assertIncludes(onboarding, "Business Snapshot");
+    assertIncludes(onboarding, "Connect Wallet");
+    assertIncludes(onboarding, "records are secured in the background");
+    assertIncludes(onboarding, "Freighter");
+    assertExcludes(onboarding, "B2B Settlement & Credit Ladder");
+    assertExcludes(onboarding, "Freighter Wallet Connection Gate");
+  });
+
+  it("uses phone-friendly Benta and Gastos record modal labels", () => {
+    const source = readProjectFile("app/index.js");
+
+    assertIncludes(source, "Benta");
+    assertIncludes(source, "Gastos");
+    assertIncludes(source, "Halaga");
+    assertIncludes(source, "Pinambayad");
+    assertIncludes(source, "Save Benta");
+    assertIncludes(source, "Save Gastos");
+    assertExcludes(source, "Sales (Inflow)");
+    assertExcludes(source, "Expenses (Outflow)");
+    assertExcludes(source, "Record Expenses");
+    assertExcludes(source, "Payment Method");
+  });
+
+  it("keeps proof details hidden behind a friendly vertical proof panel", () => {
     const source = readProjectFile("app/index.js");
 
     assertIncludes(source, "Proof hidden");
     assertIncludes(source, "Tap to view transaction details");
-    assertIncludes(source, "Create Document");
+    assertIncludes(source, "Gumawa ng Dokumento");
     assertIncludes(source, "Proof center");
     assertIncludes(source, "Transaction details");
+    assertIncludes(source, "proofDetailsCard");
     assert.ok(
       /ProofHint|isProofDetailsOpen|setProofDetailsOpen|proofDetailsOpen|showProofDetails/.test(source),
       "Expected source evidence that technical proof details are collapsed behind a friendly proof hint/state.",
     );
+    assertExcludes(source, "Create Document");
+  });
+
+  it("keeps supplier scanner copy aligned with Choice A finance language", () => {
+    const scanner = readProjectFile("app/scanner.js");
+
+    assertIncludes(scanner, "Pay Supplier");
+    assertIncludes(scanner, "Tindahan Cash");
+    assertIncludes(scanner, "financing");
+    assertExcludes(scanner, "Magbayad ng Supply");
   });
 
   it("uses friendly wallet connection copy while removing technical validation prompts", () => {

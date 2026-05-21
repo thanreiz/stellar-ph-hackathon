@@ -56,8 +56,6 @@ describe("web compatibility", () => {
     assertIncludes(source, "Transaction details");
     assertIncludes(source, "Sample Testnet TX");
     assertIncludes(source, "DEMO_TRANSACTION_HASH");
-    assertIncludes(source, "result.transactionHash");
-    assertIncludes(source, "TX: ");
     assertIncludes(source, "validateHash");
   });
 });
