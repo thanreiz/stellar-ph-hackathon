@@ -410,3 +410,44 @@ export async function fetchXlmToPhpRate() {
   return 8.50; // Fallback rate: 1 XLM = 8.50 PHP
 }
 
+/**
+ * Cash out PHPC to the anchor (PHPC issuer representing the gateway).
+ * Signed by the store's secret key.
+ */
+export async function cashOutPHPC({ amountPhpc, memo = 'SariSync Cashout' }) {
+  try {
+    const config = getStellarConfig();
+    validateConfig(config);
+
+    const server = getHorizonServer();
+    const storeKeypair = Keypair.fromSecret(config.storeSecretKey);
+    const phpcAsset = new Asset('PHPC', config.phpcIssuer);
+
+    const response = await submitWithFreshTransaction(server, async () => {
+      const storeAccount = await server.loadAccount(config.storePublicKey);
+      const transaction = new TransactionBuilder(storeAccount, {
+        fee: BASE_FEE,
+        networkPassphrase: Networks.TESTNET,
+      })
+        .addOperation(
+          Operation.payment({
+            destination: config.phpcIssuer, // Anchor/issuer is the off-ramp gateway
+            asset: phpcAsset,
+            amount: normalizeAmount(amountPhpc),
+          })
+        )
+        .addMemo(Memo.text(memo.slice(0, 28)))
+        .setTimeout(HORIZON_TRANSACTION_MAX_TIME_SECONDS)
+        .build();
+
+      transaction.sign(storeKeypair);
+      return transaction;
+    });
+
+    return { success: true, transactionHash: response.hash };
+  } catch (error) {
+    return { success: false, error: extractHorizonError(error) };
+  }
+}
+
+

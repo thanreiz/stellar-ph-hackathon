@@ -88,9 +88,8 @@ export default function ScannerScreen() {
   const tindahanCash = useMemo(() => {
     const benta = Number(totalSyncedBenta || 0);
     const phpc = Number(phpcBalance || 0);
-    const cashout = Number(cashOutTotal || 0);
-    return Math.max(0, benta + phpc - cashout);
-  }, [totalSyncedBenta, phpcBalance, cashOutTotal]);
+    return Math.max(0, benta + phpc);
+  }, [totalSyncedBenta, phpcBalance]);
 
   // Compute Total Bill Amount in PHP
   const totalAmountPhp = useMemo(() => {

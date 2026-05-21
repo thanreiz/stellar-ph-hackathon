@@ -66,6 +66,7 @@ import {
   receiveLoanFromLender,
   repayLoan,
   validateStellarTransaction,
+  cashOutPHPC,
 } from "../services/stellarService";
 import { fetchOnChainProfile, syncProfileToChain } from "../services/sorobanService";
 import { generateReceiptDocument } from "../utils/documentGenerator";
@@ -118,11 +119,10 @@ const USDC_TO_PHP_RATE = 61.45;
 
 // Tindahan Cash = Total Synced Benta (offline ledger) + PHPC Balance (on-chain)
 // XLM is strictly a gas reserve and is never shown to the user.
-function calculateTindahanCash(totalSyncedBenta, phpcBalance, cashOutTotal = 0) {
+function calculateTindahanCash(totalSyncedBenta, phpcBalance) {
   const benta = Number(totalSyncedBenta || 0);
   const phpc = Number(phpcBalance || 0);
-  const cashout = Number(cashOutTotal || 0);
-  return Math.max(0, benta + phpc - cashout);
+  return Math.max(0, benta + phpc);
 }
 
 export default function KahaScreen() {
@@ -718,7 +718,7 @@ export default function KahaScreen() {
               Tindahan Cash (Wallet Balance)
             </Text>
             <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
-              {formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance, cashOutTotal))}
+              {formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
             </Text>
           </View>
           <Pressable
@@ -771,16 +771,11 @@ export default function KahaScreen() {
               {formatPhp(Number(phpcBalance))}
             </Text>
           </View>
-          {cashOutTotal > 0 && (
-            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-              <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-                Cash Out (Withdrawn)
-              </Text>
-              <Text style={{ fontSize: 13, color: colors.error, fontWeight: "800" }}>
-                -{formatPhp(cashOutTotal)}
-              </Text>
-            </View>
-          )}
+          <View style={{ marginTop: 4 }}>
+            <Text style={{ fontSize: 11, color: colors.textSecondary, fontStyle: "italic", lineHeight: 15 }}>
+              * You can only cash out the PHPC balance. Withdrawals are processed on-chain via the anchor and reflect on stellar.expert.
+            </Text>
+          </View>
         </View>
       </View>
 
@@ -1246,7 +1241,7 @@ export default function KahaScreen() {
               <View style={{ gap: 14 }}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Cash Out (Off-Ramp)</Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                  Convert your Tindahan Cash and transfer to your personal account using Stellar SEP-24 Anchor.
+                  You can only cash out your PHPC balance. The withdrawal will be executed on the Stellar blockchain via the anchor and will reflect on stellar.expert.
                 </Text>
 
                 <View style={{ gap: 6 }}>
@@ -1284,6 +1279,9 @@ export default function KahaScreen() {
                     placeholderTextColor={colors.textSecondary}
                     style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
                   />
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                    Max: {formatPhp(Number(phpcBalance))} (PHPC Balance)
+                  </Text>
                 </View>
 
                 <View style={{ gap: 6 }}>
@@ -1314,13 +1312,12 @@ export default function KahaScreen() {
                     onPress={async () => {
                       setCashOutError("");
                       const amount = Number(cashOutAmount);
-                      const currentCash = calculateTindahanCash(totalSyncedBenta, phpcBalance, cashOutTotal);
                       if (isNaN(amount) || amount <= 0) {
                         setCashOutError("Please enter a valid amount.");
                         return;
                       }
-                      if (amount > currentCash) {
-                        setCashOutError("Insufficient Tindahan Cash.");
+                      if (amount > Number(phpcBalance)) {
+                        setCashOutError("Insufficient PHPC Balance.");
                         return;
                       }
                       if (!simPhoneNumber.trim()) {
@@ -1407,14 +1404,27 @@ export default function KahaScreen() {
                       setTimeout(async () => {
                         try {
                           const newAmount = Number(cashOutAmount);
+                          
+                          let txHash = "";
+                          if (!network.isOffline) {
+                            const cashOutResult = await cashOutPHPC({
+                              amountPhpc: newAmount,
+                              memo: `Cashout ${selectedProvider}`
+                            });
+                            if (!cashOutResult.success) {
+                              throw new Error(cashOutResult.error);
+                            }
+                            txHash = cashOutResult.transactionHash;
+                          } else {
+                            throw new Error("Cannot cash out while offline.");
+                          }
+                          setCashOutTxHash(txHash);
+
                           const nextCashOutTotal = cashOutTotal + newAmount;
                           await AsyncStorage.setItem("sarisync:cashOutTotal", String(nextCashOutTotal));
                           setCashOutTotal(nextCashOutTotal);
                           
                           // Log receipt with type PROVIDER_CASHOUT
-                          const txHash = "0x" + Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
-                          setCashOutTxHash(txHash);
-
                           const usdcEquivalent = (newAmount / USDC_TO_PHP_RATE).toFixed(2);
                           await appendReceipt({
                             id: "cashout_" + Date.now(),

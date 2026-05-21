@@ -46,7 +46,7 @@ The application enforces a strict "Zero Mock Data" policy for all wallet balance
   }
   ```
 * Calculates **Tindahan Cash**:
-  $$\text{Total Synced Benta} + \text{PHPC Balance} + (\text{XLM Balance} \times 9.07) - \text{cashOutTotal}$$
+  $$\text{Total Synced Benta} + \text{PHPC Balance}$$
 * **Microlender Shortfall Financing:** If the bill exceeds Tindahan Cash:
   * Prompts the user with an interactive warning: `"Kulang ng ₱[Amount]. Utangin ang kulang?"`.
   * If accepted, executes `receiveLoanFromLender` to secure the shortfall in PHPC from *Kaagapay Microfinance*, updates the local loan ledger, and proceeds to settle the invoice via `submitInventoryFinancingSettlement`.
