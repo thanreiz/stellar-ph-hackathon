@@ -49,11 +49,9 @@ import {
   getStageMetadata,
 } from "../services/creditLadderService";
 import {
-  GRAPH_RANGES,
   getBusinessSnapshot,
   getExpenseTotal,
   getOfflineControlState,
-  getSalesSeries,
   getSalesToday,
 } from "../services/dashboardService";
 import {
@@ -131,7 +129,7 @@ export default function KahaScreen() {
   const router = useRouter();
   const network = useNetworkStatus();
   const insets = useSafeAreaInsets();
-  const { theme, toggleTheme, colors, hasCompletedOnboarding, onboardingDetails, isLoading: isContextLoading } = useAppContext();
+  const { theme, toggleTheme, colors, hasCompletedOnboarding, onboardingDetails, isLoading: isContextLoading, clearOnboarding } = useAppContext();
   const [bentaAmount, setBentaAmount] = useState("");
   
   // Simulated Cash Out (Off-ramp) States
@@ -161,7 +159,6 @@ export default function KahaScreen() {
   const [walletConnection, setWalletConnection] = useState(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [documentStatusMessage, setDocumentStatusMessage] = useState("");
-  const [activeRange, setActiveRange] = useState("week");
   const [activeSection, setActiveSection] = useState("Kaha");
   const [receipts, setReceipts] = useState([]); // 4-D: live receipts
   const [loans, setLoans] = useState([]); // microloan records
@@ -175,6 +172,8 @@ export default function KahaScreen() {
   const [outstandingBalance, setOutstandingBalance] = useState(0);
   const [showUnlockedModal, setShowUnlockedModal] = useState(false);
   const [unlockedStageInfo, setUnlockedStageInfo] = useState({ stageName: "", limit: 0 });
+  const [isRecordModalVisible, setIsRecordModalVisible] = useState(false);
+  const [activeRecordTab, setActiveRecordTab] = useState("benta");
 
   const displayLedger = network.isOffline ? [] : syncedLedger;
   const totalSyncedBenta = useMemo(
@@ -191,10 +190,6 @@ export default function KahaScreen() {
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
   const displayScore = (!network.isOffline && onChainScore !== null) ? onChainScore : tiwalaScore;
   const displayLimit = (!network.isOffline && onChainLimit !== null) ? onChainLimit : loanLimit;
-  const graphSeries = useMemo(
-    () => getSalesSeries(displayLedger, activeRange),
-    [activeRange, displayLedger],
-  );
   // 4-D: pass live receipts; falls back to SAMPLE_BUSINESS_TRANSACTIONS when empty
   const businessSnapshot = useMemo(
     () => getBusinessSnapshot(displayLedger, [...receipts, ...expenses]),
@@ -720,8 +715,8 @@ export default function KahaScreen() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
             {stage === CREDIT_STAGES.CORNER_STORE
-              ? "Credit Ladder Stage: Max Stage"
-              : `Credit Ladder Progress: ${stageMeta.name}`}
+              ? "Tiwala Score & Limits: Max Stage"
+              : `Tiwala Score & Limits: ${stageMeta.name}`}
           </Text>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.primary }}>
             {stage === CREDIT_STAGES.READ_ONLY
@@ -757,43 +752,6 @@ export default function KahaScreen() {
         </Text>
       </View>
 
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={styles.rowBetween}>
-          <View>
-            <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Sales graph</Text>
-            <Text style={[styles.stageName, { color: colors.text }]}>
-              {network.isOffline ? "Read-Only" : "Live Dashboard"}
-            </Text>
-          </View>
-          {network.isOffline ? <Text style={[styles.lockText, { color: colors.textSecondary }]}>🔒 Cached</Text> : null}
-        </View>
-
-        <View style={styles.rangeRow}>
-          {GRAPH_RANGES.map((range) => (
-            <Pressable
-              key={range}
-              onPress={() => setActiveRange(range)}
-              style={[
-                styles.rangeButton,
-                { borderColor: colors.border },
-                activeRange === range && { backgroundColor: colors.primary, borderColor: colors.primary }
-              ]}
-            >
-              <Text
-                style={[
-                  styles.rangeButtonText,
-                  { color: colors.text },
-                  activeRange === range && { color: theme === "light" ? "#FFFFFF" : "#111411" },
-                ]}
-              >
-                {rangeLabel(range)}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <SalesGraph series={graphSeries} />
-      </View>
 
       {/* ─── QUICK ACTION FINANCING BUTTON ─── */}
       <View style={{ gap: 8, marginTop: -4, marginBottom: 4 }}>
@@ -812,102 +770,36 @@ export default function KahaScreen() {
             {stageMeta.actionLabel}
           </Text>
         </Pressable>
-        {stage === CREDIT_STAGES.READ_ONLY && (
-          <Text style={[styles.lockHint, { color: colors.textSecondary, textAlign: "center", fontSize: 12, lineHeight: 16 }]}>
-            Mag-record pa ng benta upang ma-unlock ang credit line at supplier financing.
-          </Text>
-        )}
       </View>
 
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Log daily Benta</Text>
-        <TextInput
-          value={bentaAmount}
-          onChangeText={setBentaAmount}
-          keyboardType="number-pad"
-          placeholder="Hal. 2500"
-          placeholderTextColor={colors.textSecondary}
-          style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
-        />
+      <View style={{ gap: 8, marginTop: 4, marginBottom: 12 }}>
         <Pressable
           accessibilityRole="button"
-          disabled={isSavingBenta}
-          onPress={handleAddBenta}
+          onPress={() => {
+            setStatusMessage("");
+            setIsRecordModalVisible(true);
+          }}
           style={({ pressed }) => [
             styles.primaryButton,
             { backgroundColor: colors.primary },
             pressed && styles.pressed,
-            isSavingBenta && styles.disabled,
           ]}
         >
           <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-            {isSavingBenta ? "Sine-save..." : "I-save ang Benta"}
+            I-record ang Benta / Gastos
           </Text>
         </Pressable>
-        {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
       </View>
 
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>I-record ang Gastos</Text>
-        <TextInput
-          value={expenseAmount}
-          onChangeText={setExpenseAmount}
-          keyboardType="number-pad"
-          placeholder="Hal. 1200"
-          placeholderTextColor={colors.textSecondary}
-          style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
+      {network.isOffline ? (
+        <OfflineWorkPanel
+          summary={offlineWorkSummary}
+          capabilities={offlineCapabilities}
+          draftsReadyForSubmission={draftsReadyForSubmission}
+          isOffline={network.isOffline}
+          onSubmit={handleSubmitOfflineWork}
         />
-        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Pinambayad</Text>
-        <View style={styles.rangeRow}>
-          {EXPENSE_PAYMENT_SOURCES.map((source) => (
-            <Pressable
-              key={source.id}
-              accessibilityRole="button"
-              onPress={() => setExpenseSource(source.id)}
-              style={[
-                styles.rangeButton,
-                { borderColor: colors.border },
-                expenseSource === source.id && { backgroundColor: colors.primary, borderColor: colors.primary },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.rangeButtonText,
-                  { color: colors.text },
-                  expenseSource === source.id && { color: theme === "light" ? "#FFFFFF" : "#111411" },
-                ]}
-              >
-                {source.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <Pressable
-          onPress={handleAddExpense}
-          style={[styles.secondaryButton, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}
-        >
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>I-save ang Expense</Text>
-        </Pressable>
-        {expenses.length > 0 ? (
-          <View style={styles.expenseList}>
-            {expenses.slice(0, 3).map((expense) => (
-              <InfoRow
-                key={expense.id}
-                label={expenseSourceLabel(expense.paymentSource)}
-                value={formatPhp(expense.amount)}
-              />
-            ))}
-          </View>
-        ) : null}
-      </View>
-
-      <OfflineWorkPanel
-        summary={offlineWorkSummary}
-        capabilities={offlineCapabilities}
-        draftsReadyForSubmission={draftsReadyForSubmission}
-        isOffline={network.isOffline}
-        onSubmit={handleSubmitOfflineWork}
-      />
+      ) : null}
 
       <IconNav items={NAV_ITEMS} activeId={activeSection} onSelect={setActiveSection} />
 
@@ -946,6 +838,165 @@ export default function KahaScreen() {
         />
       ) : null}
 
+      {/* Unified Record Sales/Spending Modal */}
+      <Modal
+        visible={isRecordModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setIsRecordModalVisible(false);
+          setStatusMessage("");
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
+            <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 16 }]}>I-record ang Transaksyon</Text>
+
+            {/* Tab Selector */}
+            <View style={[styles.rangeRow, { marginBottom: 16 }]}>
+              <Pressable
+                onPress={() => {
+                  setActiveRecordTab("benta");
+                  setStatusMessage("");
+                }}
+                style={[
+                  styles.rangeButton,
+                  { borderColor: colors.border, flex: 1, alignItems: "center" },
+                  activeRecordTab === "benta" && { backgroundColor: colors.primary, borderColor: colors.primary }
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.rangeButtonText,
+                    { color: colors.text },
+                    activeRecordTab === "benta" && { color: theme === "light" ? "#FFFFFF" : "#111411" }
+                  ]}
+                >
+                  Benta (Pumasok)
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  setActiveRecordTab("gastos");
+                  setStatusMessage("");
+                }}
+                style={[
+                  styles.rangeButton,
+                  { borderColor: colors.border, flex: 1, alignItems: "center" },
+                  activeRecordTab === "gastos" && { backgroundColor: colors.primary, borderColor: colors.primary }
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.rangeButtonText,
+                    { color: colors.text },
+                    activeRecordTab === "gastos" && { color: theme === "light" ? "#FFFFFF" : "#111411" }
+                  ]}
+                >
+                  Gastos (Lumabas)
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Form Fields based on Active Tab */}
+            {activeRecordTab === "benta" ? (
+              <View style={{ gap: 8 }}>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Log daily Benta</Text>
+                <TextInput
+                  value={bentaAmount}
+                  onChangeText={setBentaAmount}
+                  keyboardType="number-pad"
+                  placeholder="Hal. 2500"
+                  placeholderTextColor={colors.textSecondary}
+                  style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={isSavingBenta}
+                  onPress={handleAddBenta}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary, marginTop: 8 },
+                    pressed && styles.pressed,
+                    isSavingBenta && styles.disabled,
+                  ]}
+                >
+                  <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
+                    {isSavingBenta ? "Sine-save..." : "I-save ang Benta"}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View style={{ gap: 8 }}>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>I-record ang Gastos</Text>
+                <TextInput
+                  value={expenseAmount}
+                  onChangeText={setExpenseAmount}
+                  keyboardType="number-pad"
+                  placeholder="Hal. 1200"
+                  placeholderTextColor={colors.textSecondary}
+                  style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
+                />
+                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Pinambayad</Text>
+                <View style={[styles.rangeRow, { flexWrap: "wrap", gap: 6 }]}>
+                  {EXPENSE_PAYMENT_SOURCES.map((source) => (
+                    <Pressable
+                      key={source.id}
+                      accessibilityRole="button"
+                      onPress={() => setExpenseSource(source.id)}
+                      style={[
+                        styles.rangeButton,
+                        { borderColor: colors.border, minWidth: "45%", alignItems: "center" },
+                        expenseSource === source.id && { backgroundColor: colors.primary, borderColor: colors.primary },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.rangeButtonText,
+                          { color: colors.text },
+                          expenseSource === source.id && { color: theme === "light" ? "#FFFFFF" : "#111411" },
+                        ]}
+                      >
+                        {source.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={handleAddExpense}
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary, marginTop: 8 },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
+                    I-save ang Expense
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
+            {statusMessage ? (
+              <Text style={[styles.statusText, { color: colors.primary, marginTop: 12, textAlign: "center" }]}>
+                {statusMessage}
+              </Text>
+            ) : null}
+
+            <Pressable
+              onPress={() => {
+                setIsRecordModalVisible(false);
+                setStatusMessage("");
+              }}
+              style={[styles.secondaryButton, { backgroundColor: colors.cardSecondary, borderColor: colors.border, marginTop: 16 }]}
+            >
+              <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Isara</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
       {/* Wallet Details Modal */}
       <Modal visible={isWalletModalVisible} transparent animationType="fade" onRequestClose={() => setIsWalletModalVisible(false)}>
         <View style={styles.modalOverlay}>
@@ -976,6 +1027,33 @@ export default function KahaScreen() {
               onPress={() => setIsWalletModalVisible(false)}
             >
               <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Isara</Text>
+            </Pressable>
+
+            <Pressable
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                { backgroundColor: colors.cardSecondary, borderColor: colors.error, borderWidth: 1, marginTop: 8, borderRadius: 99 },
+                pressed && styles.pressed,
+              ]}
+              onPress={() => {
+                Alert.alert(
+                  "Palitan ang Wallet?",
+                  "Sigurado ka bang gusto mong palitan ang wallet? Mawawala ang kasalukuyang koneksyon ng iyong tindahan wallet.",
+                  [
+                    { text: "Kanselahin", style: "cancel" },
+                    {
+                      text: "Palitan",
+                      style: "destructive",
+                      onPress: async () => {
+                        setIsWalletModalVisible(false);
+                        await clearOnboarding();
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={[styles.secondaryButtonText, { color: colors.error }]}>Palitan ang Wallet (Disconnect)</Text>
             </Pressable>
           </View>
         </View>
@@ -1532,27 +1610,6 @@ function MetricCard({ label, value, color }) {
   );
 }
 
-function SalesGraph({ series }) {
-  const { colors } = useTheme();
-  const maxAmount = Math.max(1, ...series.map((item) => item.amount));
-
-  return (
-    <View style={styles.graph}>
-      {series.map((item) => {
-        const height = Math.max(8, Math.round((item.amount / maxAmount) * 120));
-
-        return (
-          <View key={item.label} style={styles.graphItem}>
-            <View style={[styles.graphTrack, { backgroundColor: colors.cardSecondary }]}>
-              <View style={[styles.graphBar, { height, backgroundColor: colors.primary }]} />
-            </View>
-            <Text style={[styles.graphLabel, { color: colors.textSecondary }]}>{item.label}</Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
 
 function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isOffline, onSubmit }) {
   const { colors } = useTheme();
