@@ -34,7 +34,7 @@ The application enforces a strict "Zero Mock Data" policy for all wallet balance
 #### Pillar 2: Offline Kaha Mode (`services/storageService.js`)
 * Auto-detects network transitions.
 * **Disabled Stellar Actions:** Repayments, loan requests, and cash outs are disabled when offline with a persistent warning banner.
-* **Local Draft Logging:** Stores "Benta" (sales) locally. Auto-syncs drafts to the on-chain profile and updates balances instantly once network connectivity is restored.
+* **Local Draft Logging:** Stores "Benta" (sales) locally. Auto-syncs drafts to the on-chain profile and updates balances instantly once network connectivity is restored. Local draft metrics (like Draft Supplier Invoices) are rendered conditionally only when active drafts exist.
 
 #### Pillar 3: Smart Checkout Scanner (`app/scanner.js`)
 * Renamed checkout action to **"Magbayad ng Supply"**.
@@ -62,13 +62,14 @@ The application enforces a strict "Zero Mock Data" policy for all wallet balance
 
 ### Contract: `update_profile` in `contracts/sarisync_contract/src/lib.rs`
 
-The Soroban contract stores each store's on-chain credit profile as a `(u32, u64)` tuple keyed by the store's Stellar `Address`:
+The Soroban contract stores each store's on-chain credit profile as a `(u32, u64, i128)` tuple keyed by the store's Stellar `Address`:
 
 | Parameter | Rust Type | Frontend Value |
 |---|---|---|
 | `store` | `Address` | Store's Stellar public key |
 | `score` | `u32` | Tiwala Score (30–95) from `calculateTiwalaScore()` |
-| `loan_limit` | `u64` | PHP credit ceiling (0 / 3500 / 7500) from `getLoanLimitForStage()` |
+| `loan_limit` | `u64` | PHP credit ceiling (0 / 5000 / 8000) from `getLoanLimitForStage()` |
+| `outstanding_balance` | `i128` | On-chain verified outstanding loan balance in PHP |
 
 ### Transaction Finality Polling (`services/sorobanService.js`)
 

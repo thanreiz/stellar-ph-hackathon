@@ -178,10 +178,10 @@ export default function KahaScreen() {
 
   const displayLedger = network.isOffline ? [] : syncedLedger;
   const totalSyncedBenta = useMemo(
-    () => displayLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0),
-    [displayLedger],
+    () => syncedLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0),
+    [syncedLedger],
   );
-  const salesToday = useMemo(() => getSalesToday(displayLedger), [displayLedger]);
+  const salesToday = useMemo(() => getSalesToday(syncedLedger), [syncedLedger]);
   const expenseTotal = useMemo(() => getExpenseTotal(expenses), [expenses]);
 
   // stage is now a CREDIT_STAGES string; metadata carries display properties
@@ -194,8 +194,8 @@ export default function KahaScreen() {
   const displayOutstandingBalance = (!network.isOffline && onChainOutstandingBalance !== null) ? onChainOutstandingBalance : outstandingBalance;
   // 4-D: pass live receipts; falls back to SAMPLE_BUSINESS_TRANSACTIONS when empty
   const businessSnapshot = useMemo(
-    () => getBusinessSnapshot(displayLedger, [...receipts, ...expenses]),
-    [displayLedger, receipts, expenses],
+    () => getBusinessSnapshot(syncedLedger, [...receipts, ...expenses]),
+    [syncedLedger, receipts, expenses],
   );
   const controlState = getOfflineControlState(network.isOffline);
   const offlineCapabilities = useMemo(
