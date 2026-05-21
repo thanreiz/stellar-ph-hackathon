@@ -66,7 +66,7 @@ import {
 import { generateReceiptDocument } from "../utils/documentGenerator";
 import { formatPhp, formatUsdc } from "../utils/formatters";
 import { useTheme } from "../context/ThemeContext";
-import { BentoMetricCard, IconNav } from "../components/SariSyncUI";
+import { BentoMetricCard, IconNav, ProofHint } from "../components/SariSyncUI";
 
 // Lender accounts (generated via setupLiquidity + generateLenders scripts)
 const LENDER_OFFERS = [
@@ -558,7 +558,7 @@ export default function KahaScreen() {
       </View>
 
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Log expense</Text>
+        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>I-record ang Gastos</Text>
         <TextInput
           value={expenseAmount}
           onChangeText={setExpenseAmount}
@@ -567,7 +567,7 @@ export default function KahaScreen() {
           placeholderTextColor={colors.textSecondary}
           style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
         />
-        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Expense source</Text>
+        <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Pinambayad</Text>
         <View style={styles.rangeRow}>
           {EXPENSE_PAYMENT_SOURCES.map((source) => (
             <Pressable
@@ -773,7 +773,7 @@ function WalletConnectionGate({ onConnect }) {
             <Text style={{ color: theme === "light" ? "#005427" : "#A6F8B4", fontSize: 12, fontWeight: "700" }}>Konek Wallet</Text>
           </View>
           <Text style={[styles.bodyText, { color: colors.textSecondary, textAlign: "center", fontSize: 15, paddingHorizontal: 8 }]}>
-            I-konek ang iyong Stellar Testnet account sa pamamagitan ng Freighter bago gamitin ang Kaha.
+            I-konek ang wallet para ma-ready ang Kaha, habang records are secured in the background.
           </Text>
         </View>
 
@@ -1067,6 +1067,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
   const [validateHash, setValidateHash] = useState("");
   const [validationResult, setValidationResult] = useState(null);
   const [isValidating, setIsValidating] = useState(false);
+  const [isProofDetailsOpen, setProofDetailsOpen] = useState(false);
 
   const activeLoans = loans.filter(l => l.status === "active");
   const paidLoans = loans.filter(l => l.status === "paid");
@@ -1142,51 +1143,60 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage }) {
         </>
       )}
 
-      {/* Validate Stellar Invoice */}
-      <Text style={[styles.cardLabel, { marginTop: 20, marginBottom: 8, color: colors.textSecondary }]}>I-Validate ang Stellar Invoice</Text>
-      <Text style={[styles.bodyText, { color: colors.textSecondary }]}>I-paste ang transaction hash para i-verify sa Horizon Testnet.</Text>
-      <TextInput
-        value={validateHash}
-        onChangeText={setValidateHash}
-        placeholder="Transaction hash (64 hex chars)"
-        placeholderTextColor={colors.textSecondary}
-        style={[styles.input, { marginVertical: 8, fontSize: 13, backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <Text style={[styles.bodyText, { fontSize: 11, color: colors.textSecondary }]}>
-        Sample Testnet TX: {DEMO_TRANSACTION_HASH}
-      </Text>
-      <Pressable
-        disabled={isValidating || !validateHash.trim()}
-        onPress={handleValidate}
-        style={({ pressed }) => [
-          styles.primaryButton,
-          { backgroundColor: colors.primary },
-          pressed && styles.pressed,
-          (isValidating || !validateHash.trim()) && styles.disabled,
-        ]}
-      >
-        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isValidating ? "Nag-va-validate..." : "I-Validate"}</Text>
-      </Pressable>
+      <View style={{ marginTop: 20 }}>
+        <ProofHint
+          onPress={() => setProofDetailsOpen(!isProofDetailsOpen)}
+          label={isProofDetailsOpen ? "Transaction details" : "Proof hidden · Tap to view transaction details"}
+        />
+      </View>
 
-      {validationResult && (
+      {isProofDetailsOpen ? (
         <View style={[styles.lenderCard, { marginTop: 12, backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
-          {validationResult.success ? (
-            <View style={{ width: "100%" }}>
-              <Text style={[styles.rowLabel, { color: colors.primary }]}>✅ Valid Stellar Transaction</Text>
-              <InfoRow label="Ledger" value={String(validationResult.ledger)} />
-              <InfoRow label="Date" value={new Date(validationResult.createdAt).toLocaleString("en-PH")} />
-              <InfoRow label="Source" value={validationResult.sourceAccount.slice(0, 8) + "..." + validationResult.sourceAccount.slice(-6)} />
-              <InfoRow label="Operations" value={String(validationResult.operationCount)} />
-              {validationResult.memo && <InfoRow label="Memo" value={validationResult.memo} />}
-              <InfoRow label="Successful" value={validationResult.successful ? "Yes" : "No"} />
+          <Text style={[styles.cardLabel, { marginBottom: 8, color: colors.textSecondary }]}>Transaction details</Text>
+          <TextInput
+            value={validateHash}
+            onChangeText={setValidateHash}
+            placeholder="Transaction hash (64 hex chars)"
+            placeholderTextColor={colors.textSecondary}
+            style={[styles.input, { marginVertical: 8, fontSize: 13, backgroundColor: colors.card, color: colors.text, borderColor: colors.border }]}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <Text style={[styles.bodyText, { fontSize: 11, color: colors.textSecondary }]}>
+            Sample Testnet TX: {DEMO_TRANSACTION_HASH}
+          </Text>
+          <Pressable
+            disabled={isValidating || !validateHash.trim()}
+            onPress={handleValidate}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: colors.primary },
+              pressed && styles.pressed,
+              (isValidating || !validateHash.trim()) && styles.disabled,
+            ]}
+          >
+            <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isValidating ? "Nag-va-validate..." : "I-Validate"}</Text>
+          </Pressable>
+
+          {validationResult && (
+            <View style={[styles.lenderCard, { marginTop: 12, backgroundColor: colors.card, borderColor: colors.border }]}>
+              {validationResult.success ? (
+                <View style={{ width: "100%" }}>
+                  <Text style={[styles.rowLabel, { color: colors.primary }]}>✅ Valid Stellar Transaction</Text>
+                  <InfoRow label="Ledger" value={String(validationResult.ledger)} />
+                  <InfoRow label="Date" value={new Date(validationResult.createdAt).toLocaleString("en-PH")} />
+                  <InfoRow label="Source" value={validationResult.sourceAccount.slice(0, 8) + "..." + validationResult.sourceAccount.slice(-6)} />
+                  <InfoRow label="Operations" value={String(validationResult.operationCount)} />
+                  {validationResult.memo && <InfoRow label="Memo" value={validationResult.memo} />}
+                  <InfoRow label="Successful" value={validationResult.successful ? "Yes" : "No"} />
+                </View>
+              ) : (
+                <Text style={[styles.bodyText, { color: colors.error }]}>❌ {validationResult.error}</Text>
+              )}
             </View>
-          ) : (
-            <Text style={[styles.bodyText, { color: colors.error }]}>❌ {validationResult.error}</Text>
           )}
         </View>
-      )}
+      ) : null}
 
       {/* Payment confirmation modal */}
       <Modal visible={!!confirmLoan} transparent animationType="fade">
@@ -1242,7 +1252,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Receipts</Text>
+      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Proof center</Text>
       <Text style={[styles.stageName, { color: colors.text }]}>Transaction proof</Text>
 
       <View style={styles.metricsGrid}>
@@ -1298,7 +1308,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
           pressed && styles.pressed,
         ]}
       >
-        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>📄 Create Document</Text>
+        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Gumawa ng Dokumento</Text>
       </Pressable>
       {documentStatusMessage ? (
         <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary, textAlign: "center" }]}>
