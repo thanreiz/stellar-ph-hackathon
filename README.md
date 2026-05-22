@@ -24,8 +24,8 @@ SariSync Ledger was built for the **Build on Stellar Philippines Hackathon** by 
 
 > **Judge links**
 >
-> - Demo video: `[add demo video here]`
-> - Pitch deck: `[add pitch deck here]`
+> - Demo video: [Google Drive](https://drive.google.com/file/d/1ikJT92_Uovy_kv3A3MXdDJd8aq1sQEnA/view?usp=sharing)
+> - Pitch deck: [Canva deck](https://canva.link/l2z2w3a2a91lfap)
 > - Live deployment: [dist-kappa-kohl-83.vercel.app](https://dist-kappa-kohl-83.vercel.app)
 > - Android/iPhone demo screenshots: [see screenshots](#screenshots)
 > - Testnet store wallet: [`GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2`](https://stellar.expert/explorer/testnet/account/GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2)
