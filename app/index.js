@@ -109,6 +109,7 @@ const LENDER_OFFERS = [
 const OFFLINE_WARNING = "Offline mode";
 const DEMO_TRANSACTION_HASH = "0819554161045c5e2ef2a629dbd10396d504f76862739ceebf8452addf6c9489";
 const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
+const isPublic = process.env.EXPO_PUBLIC_STELLAR_NETWORK === "public" || process.env.EXPO_PUBLIC_STELLAR_NETWORK === "mainnet";
 
 const NAV_ITEMS = [
   { id: "Kaha", label: "Kaha", icon: "wallet" },
@@ -132,6 +133,29 @@ function calculateTindahanCash(totalSyncedBenta, phpcBalance) {
   const benta = Number(totalSyncedBenta || 0);
   const phpc = Number(phpcBalance || 0);
   return Math.max(0, benta + phpc);
+}
+
+function calculateNetCashBenta(salesLedger, expenseLedger, cashOutAmount = 0) {
+  const sources = ["cash", "gcash", "maya", "bank_transfer"];
+  return sources.reduce((total, source) => {
+    const sales = (salesLedger || []).reduce((sum, record) => {
+      const recordSource = record.paymentSource || "cash";
+      if (recordSource === source) {
+        return sum + Number(record.amount || 0);
+      }
+      return sum;
+    }, 0);
+    const expenses = (expenseLedger || []).reduce((sum, record) => {
+      const recordSource = record.paymentSource || "cash";
+      if (recordSource === source) {
+        return sum + Number(record.amount || 0);
+      }
+      return sum;
+    }, 0);
+    const extra = source === "cash" ? Number(cashOutAmount || 0) : 0;
+    const netForSource = Math.max(0, sales + extra - expenses);
+    return total + netForSource;
+  }, 0);
 }
 
 function formatStageLabel(stage, stageMeta) {
@@ -166,10 +190,12 @@ export default function KahaScreen() {
   }, [isContextLoading, hasCompletedOnboarding]);
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseSource, setExpenseSource] = useState("cash");
+  const [bentaSource, setBentaSource] = useState("cash");
   const [expenses, setExpenses] = useState([]);
   const [pendingQueue, setPendingQueue] = useState([]);
   const [syncedLedger, setSyncedLedger] = useState([]);
   const [isSavingBenta, setIsSavingBenta] = useState(false); // 4-B: rage-click guard
+  const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [isLedgerReady, setIsLedgerReady] = useState(false);
   const [isWalletReady, setIsWalletReady] = useState(false);
   const [walletConnection, setWalletConnection] = useState(null);
@@ -196,6 +222,10 @@ export default function KahaScreen() {
   const totalSyncedBenta = useMemo(
     () => syncedLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0),
     [syncedLedger],
+  );
+  const netCashBenta = useMemo(
+    () => calculateNetCashBenta(syncedLedger, expenses, cashOutTotal),
+    [syncedLedger, expenses, cashOutTotal],
   );
   const salesToday = useMemo(() => getSalesToday(syncedLedger), [syncedLedger]);
   const expenseTotal = useMemo(() => getExpenseTotal(expenses), [expenses]);
@@ -254,11 +284,11 @@ export default function KahaScreen() {
         if (wallet && wallet.publicKey) {
           const [profile, balances] = await Promise.all([
             fetchOnChainProfile(wallet.publicKey).catch((err) => {
-              console.error("[SorobanService] Profile query failed:", err);
+              console.warn("[SorobanService] Profile query failed:", err);
               return null;
             }),
             fetchLiveWalletBalances(wallet.publicKey).catch((err) => {
-              console.error("[StellarService] Balances query failed:", err);
+              console.warn("[StellarService] Balances query failed:", err);
               if (err.status === 404 || err.message?.includes("404") || err.name === "NotFoundError") {
                 return { xlm: "0.0000", phpc: "0.0000" };
               }
@@ -277,7 +307,7 @@ export default function KahaScreen() {
           }
         }
       } catch (err) {
-        console.error("[SorobanService] Failed to fetch profile/balances in refreshLedger:", err);
+        console.warn("[SorobanService] Failed to fetch profile/balances in refreshLedger:", err);
       }
     }
     setIsLedgerReady(true);
@@ -347,7 +377,7 @@ export default function KahaScreen() {
                   setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
                   setStatusMessage("Store profile updated successfully.");
                 } catch (sorobanError) {
-                  console.error("Soroban profile sync failed:", sorobanError);
+                  console.warn("Soroban profile sync failed:", sorobanError);
                   setStatusMessage(`Failed to sync profile: ${sorobanError.message}`);
                 } finally {
                   setIsSyncingOnChain(false);
@@ -383,7 +413,7 @@ export default function KahaScreen() {
             setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
             setStatusMessage("Offline Sales and secure profile synced successfully.");
           } catch (sorobanError) {
-            console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
+            console.warn("Soroban sync failed during syncWhenOnline:", sorobanError);
             setStatusMessage(`Offline Sales synced, but secure profile update failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
@@ -409,7 +439,7 @@ export default function KahaScreen() {
     setIsSavingBenta(true);
 
     try {
-      const payload = createSalesPayload(bentaAmount);
+      const payload = createSalesPayload(bentaAmount, bentaSource);
 
       if (network.isOffline) {
         const queue = await enqueuePendingSale(payload);
@@ -447,7 +477,7 @@ export default function KahaScreen() {
 
             checkStageUpgrade(oldTotal, totalSyncedBenta);
           } catch (sorobanError) {
-            console.error("Soroban sync failed:", sorobanError);
+            console.warn("Soroban sync failed:", sorobanError);
             setStatusMessage(`Sales saved, but secure profile update failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
@@ -460,6 +490,7 @@ export default function KahaScreen() {
       }
 
       setBentaAmount("");
+      setBentaSource("cash");
     } catch (error) {
       Alert.alert("Benta error", error.message);
     } finally {
@@ -468,19 +499,33 @@ export default function KahaScreen() {
   }
 
   async function handleAddExpense() {
+    if (isSavingExpense) return;
     setStatusMessage("");
+    setIsSavingExpense(true);
 
     try {
       const payload = createExpensePayload({
         amount: expenseAmount,
         paymentSource: expenseSource,
       });
-      const updatedExpenses = await appendExpenseToLedger(payload);
-      setExpenses(updatedExpenses);
+
+      if (network.isOffline) {
+        const updatedExpenses = await appendExpenseToLedger(payload);
+        setExpenses(updatedExpenses);
+        setStatusMessage(OFFLINE_WARNING);
+        await refreshLedger();
+      } else {
+        const updatedExpenses = await appendExpenseToLedger(payload);
+        setExpenses(updatedExpenses);
+        setStatusMessage("Expense record saved.");
+        await refreshLedger();
+      }
+
       setExpenseAmount("");
-      setStatusMessage("Expense record saved.");
     } catch (error) {
       Alert.alert("Expense error", error.message);
+    } finally {
+      setIsSavingExpense(false);
     }
   }
 
@@ -572,7 +617,7 @@ export default function KahaScreen() {
           setOnChainLimit(syncResult.confirmedLimit);
           setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
         } catch (sorobanError) {
-          console.error("Soroban sync failed for outstanding balance:", sorobanError);
+          console.warn("Soroban sync failed for outstanding balance:", sorobanError);
         } finally {
           setIsSyncingOnChain(false);
         }
@@ -635,7 +680,7 @@ export default function KahaScreen() {
           setOnChainLimit(syncResult.confirmedLimit);
           setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
         } catch (sorobanError) {
-          console.error("Soroban sync failed for outstanding balance:", sorobanError);
+          console.warn("Soroban sync failed for outstanding balance:", sorobanError);
         } finally {
           setIsSyncingOnChain(false);
         }
@@ -752,7 +797,7 @@ export default function KahaScreen() {
             Tindahan Cash
           </Text>
           <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
-            {network.isOffline ? "Saved locally" : formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
+            {network.isOffline ? "Saved locally" : formatPhp(calculateTindahanCash(netCashBenta, phpcBalance))}
           </Text>
         </View>
 
@@ -765,7 +810,7 @@ export default function KahaScreen() {
               Benta
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
-              {network.isOffline ? "Hidden offline" : formatPhp(totalSyncedBenta)}
+              {network.isOffline ? "Hidden offline" : formatPhp(netCashBenta)}
             </Text>
           </View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
@@ -844,8 +889,9 @@ export default function KahaScreen() {
 
       <View style={styles.quickActionRow}>
         <QuickAction
-          label="Record Benta"
-          helper="Cash in"
+          label="Record Benta / Gastos"
+          helper="Cash / banks"
+          tone="dual"
           onPress={() => {
             setStatusMessage("");
             setActiveRecordTab("benta");
@@ -853,19 +899,10 @@ export default function KahaScreen() {
           }}
         />
         <QuickAction
-          label="Record Gastos"
-          helper="Cash / banks"
-          tone="expense"
-          onPress={() => {
-            setStatusMessage("");
-            setActiveRecordTab("gastos");
-            setIsRecordModalVisible(true);
-          }}
-        />
-        <QuickAction
           label="Cash Out"
           helper={network.isOffline ? "Offline" : "To GCash/Maya"}
           disabled={network.isOffline}
+          tone="secondary"
           onPress={() => {
             setCashOutAmount("");
             setCashOutStep("form");
@@ -876,7 +913,6 @@ export default function KahaScreen() {
             setIsCashOutModalVisible(true);
           }}
         />
-
       </View>
 
       {network.isOffline ? (
@@ -946,13 +982,14 @@ export default function KahaScreen() {
               What happened?
             </Text>
 
-            {/* Tab Selector */}
+             {/* Tab Selector */}
             <View style={{ marginBottom: 16 }}>
               <SegmentedControl
                 value={activeRecordTab}
+                activeColor={activeRecordTab === "gastos" ? colors.expense : colors.primary}
                 onChange={(nextTab) => {
-                  setActiveRecordTab(nextTab);
                   setStatusMessage("");
+                  setActiveRecordTab(nextTab);
                 }}
                 options={[
                   { id: "benta", label: "Benta" },
@@ -973,6 +1010,31 @@ export default function KahaScreen() {
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
+                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Pinambayad</Text>
+                <View style={[styles.rangeRow, { flexWrap: "wrap", gap: 6 }]}>
+                  {EXPENSE_PAYMENT_SOURCES.map((source) => (
+                    <Pressable
+                      key={source.id}
+                      accessibilityRole="button"
+                      onPress={() => setBentaSource(source.id)}
+                      style={[
+                        styles.rangeButton,
+                        { borderColor: colors.border, minWidth: "45%", alignItems: "center" },
+                        bentaSource === source.id && { backgroundColor: colors.primary, borderColor: colors.primary },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.rangeButtonText,
+                          { color: colors.text },
+                          bentaSource === source.id && { color: theme === "light" ? "#FFFFFF" : "#111411" },
+                        ]}
+                      >
+                        {source.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
                 <Pressable
                   accessibilityRole="button"
                   disabled={isSavingBenta}
@@ -1010,7 +1072,7 @@ export default function KahaScreen() {
                       style={[
                         styles.rangeButton,
                         { borderColor: colors.border, minWidth: "45%", alignItems: "center" },
-                        expenseSource === source.id && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        expenseSource === source.id && { backgroundColor: colors.expense, borderColor: colors.expense },
                       ]}
                     >
                       <Text
@@ -1027,15 +1089,17 @@ export default function KahaScreen() {
                 </View>
                 <Pressable
                   accessibilityRole="button"
+                  disabled={isSavingExpense}
                   onPress={handleAddExpense}
                   style={({ pressed }) => [
                     styles.primaryButton,
-                    { backgroundColor: colors.primary, marginTop: 8 },
+                    { backgroundColor: colors.expense, marginTop: 8 },
                     pressed && styles.pressed,
+                    isSavingExpense && styles.disabled,
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    Save Gastos
+                    {isSavingExpense ? "Saving..." : "Save Gastos"}
                   </Text>
                 </Pressable>
               </View>
@@ -1429,7 +1493,7 @@ export default function KahaScreen() {
                               setOnChainLimit(syncResult.confirmedLimit);
                               setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
                             } catch (sorobanError) {
-                              console.error("Soroban profile sync failed during cash-out:", sorobanError);
+                              console.warn("Soroban profile sync failed during cash-out:", sorobanError);
                             }
                           }
 
@@ -1866,7 +1930,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                 <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Amount: <Text style={{ fontWeight: "700", color: colors.tertiary }}>{formatPhp(selectedOffer.amountPhpc)}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Interest: {selectedOffer.interestRate}</Text>
                 <Text style={[styles.bodyText, { marginTop: 8, color: colors.textSecondary, fontSize: 12 }]}>
-                  This is a Stellar Testnet transaction. PHPC will be transferred to your store wallet.
+                  This is a Stellar {isPublic ? "Mainnet" : "Testnet"} transaction. PHPC will be transferred to your store wallet.
                 </Text>
               </>
             )}
@@ -2026,7 +2090,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
             autoCorrect={false}
           />
           <Text style={[styles.bodyText, { fontSize: 11, color: colors.textSecondary }]}>
-            Sample Testnet TX: {DEMO_TRANSACTION_HASH}
+            {isPublic ? "Sample Mainnet TX: " : "Sample Testnet TX: "}{DEMO_TRANSACTION_HASH}
           </Text>
           <Pressable
             disabled={isValidating || !validateHash.trim()}
@@ -2072,7 +2136,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Amount: <Text style={{ fontWeight: "700", color: colors.error }}>{formatPhp(confirmLoan.amountPhpDisplay)}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 8, fontSize: 12, color: colors.textSecondary }]}>
                   {controlState.canTransact
-                    ? "This is a Stellar Testnet transaction that will send PHPC from your store wallet."
+                    ? `This is a Stellar ${isPublic ? "Mainnet" : "Testnet"} transaction that will send PHPC from your store wallet.`
                     : "Offline now. This will be saved as a repayment draft and not yet broadcasted to Stellar."}
                 </Text>
               </>

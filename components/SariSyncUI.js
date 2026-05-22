@@ -220,6 +220,35 @@ function ProofHint({ onPress, label = "Proof hidden · Tap to view transaction d
 function QuickAction({ label, helper, onPress, disabled = false, tone = "primary" }) {
   const { colors } = useTheme();
   const isExpense = tone === "expense";
+  const isSecondary = tone === "secondary";
+  const isDual = tone === "dual";
+
+  let bg = colors.primary;
+  let bc = colors.primary;
+  let tc = colors.buttonTextOnPrimary;
+  let hc = colors.buttonTextOnPrimary;
+
+  if (disabled) {
+    bg = colors.cardSecondary;
+    bc = colors.border;
+    tc = colors.textSecondary;
+    hc = colors.textSecondary;
+  } else if (isExpense) {
+    bg = colors.expense;
+    bc = colors.expense;
+    tc = colors.buttonTextOnPrimary;
+    hc = colors.buttonTextOnPrimary;
+  } else if (isSecondary) {
+    bg = colors.surfaceLow;
+    bc = colors.border;
+    tc = colors.text;
+    hc = colors.textSecondary;
+  } else if (isDual) {
+    bg = colors.primary;
+    bc = colors.primary;
+    tc = colors.buttonTextOnPrimary;
+    hc = colors.buttonTextOnPrimary;
+  }
 
   return (
     <Pressable
@@ -230,20 +259,30 @@ function QuickAction({ label, helper, onPress, disabled = false, tone = "primary
       style={({ pressed }) => [
         styles.quickAction,
         {
-          backgroundColor: disabled
-            ? colors.cardSecondary
-            : isExpense
-              ? colors.expense
-              : colors.primary,
-          borderColor: disabled ? colors.border : isExpense ? colors.expense : colors.primary,
+          backgroundColor: bg,
+          borderColor: bc,
           opacity: pressed && !disabled ? 0.82 : 1,
+          position: "relative",
         },
       ]}
     >
+      {isDual && (
+        <View
+          style={{
+            position: "absolute",
+            top: 10,
+            right: 12,
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: colors.expense,
+          }}
+        />
+      )}
       <Text
         style={[
           styles.quickActionLabel,
-          { color: disabled ? colors.textSecondary : colors.buttonTextOnPrimary },
+          { color: tc },
         ]}
       >
         {label}
@@ -252,7 +291,7 @@ function QuickAction({ label, helper, onPress, disabled = false, tone = "primary
         <Text
           style={[
             styles.quickActionHelper,
-            { color: disabled ? colors.textSecondary : colors.buttonTextOnPrimary },
+            { color: hc },
           ]}
         >
           {helper}
@@ -304,8 +343,9 @@ function InfoRow({ label, value, tone = "default" }) {
   );
 }
 
-function SegmentedControl({ options, value, onChange }) {
+function SegmentedControl({ options, value, onChange, activeColor }) {
   const { colors } = useTheme();
+  const activeBg = activeColor || colors.primary;
 
   return (
     <View style={[styles.segmentedControl, { backgroundColor: colors.surfaceLow, borderColor: colors.border }]}>
@@ -321,7 +361,7 @@ function SegmentedControl({ options, value, onChange }) {
             style={({ pressed }) => [
               styles.segmentedControlItem,
               {
-                backgroundColor: active ? colors.primary : "transparent",
+                backgroundColor: active ? activeBg : "transparent",
                 opacity: pressed ? 0.78 : 1,
               },
             ]}
