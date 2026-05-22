@@ -27,10 +27,10 @@ function assertMatches(source, pattern, message = `Expected source to match ${pa
 }
 
 describe("mobile demo configuration", () => {
-  it("declares Expo as an iOS, Android, and web app", () => {
+  it("declares Expo as an iOS and Android app only", () => {
     const appConfig = JSON.parse(readProjectFile("app.json"));
 
-    assert.deepEqual(appConfig.expo.platforms, ["ios", "android", "web"]);
+    assert.deepEqual(appConfig.expo.platforms, ["ios", "android"]);
   });
 
   it("documents mobile demo commands instead of web preview deployment", () => {
