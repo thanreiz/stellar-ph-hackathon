@@ -353,3 +353,24 @@ export async function appendExpenseToLedger(expensePayload) {
   await AsyncStorage.setItem(STORAGE_KEYS.EXPENSE_LEDGER, JSON.stringify(updated));
   return updated;
 }
+
+export async function resetDemoData() {
+  const keys = [
+    'sarisync:pendingSyncQueue',
+    'sarisync:syncedSalesLedger',
+    'sarisync:outstandingLoanBalance',
+    'sarisync:lastStage',
+    'sarisync:receipts',
+    'sarisync:loans',
+    'sarisync:walletConnection',
+    'sarisync:offlineDrafts',
+    'sarisync:expenseLedger',
+    'sarisync:cashOutTotal',
+    'sarisync:hasCompletedOnboarding',
+    'sarisync:onboardingDetails',
+    'sarisync:userLevel',
+    'sarisync:themeMode'
+  ];
+  await AsyncStorage.multiRemove(keys);
+}
+

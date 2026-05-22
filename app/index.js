@@ -41,6 +41,7 @@ import {
   updateLoanStatus,
   appendReceipt,
   saveOfflineDrafts,
+  resetDemoData,
 } from "../services/storageService";
 import {
   CREDIT_STAGES,
@@ -510,6 +511,43 @@ export default function KahaScreen() {
     syncWhenOnline();
   }, [network.hasCheckedInitialStatus, network.isOffline, refreshLedger, walletConnection?.publicKey, handleSyncOfflineDrafts]);
 
+  const handleResetDemo = useCallback(() => {
+    Alert.alert(
+      "Reset Demo Data?",
+      "This will completely erase all local data including sales, expenses, receipts, loans, drafts, cash out stats, and Freighter wallet connections. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset Everything",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await resetDemoData();
+              await clearOnboarding();
+              setWalletConnection(null);
+              setPendingQueue([]);
+              setSyncedLedger([]);
+              setReceipts([]);
+              setLoans([]);
+              setOfflineDrafts([]);
+              setExpenses([]);
+              setOutstandingBalance(0);
+              setCashOutTotal(0);
+              setPhpcBalance("0.00");
+              setXlmBalance("0.0000");
+              setOnChainScore(null);
+              setOnChainLimit(null);
+              setOnChainOutstandingBalance(null);
+              Alert.alert("Reset Complete", "The demo data has been fully reset.");
+            } catch (err) {
+              Alert.alert("Reset Error", err.message);
+            }
+          }
+        }
+      ]
+    );
+  }, [clearOnboarding]);
+
   // 4-B: rage-click guard — disable before the first await
   async function handleAddBenta() {
     if (isSavingBenta) return;
@@ -799,7 +837,7 @@ export default function KahaScreen() {
   }
 
   if (!walletConnection) {
-    return <WalletConnectionGate onConnect={handleConnectWallet} />;
+    return <WalletConnectionGate onConnect={handleConnectWallet} onReset={handleResetDemo} />;
   }
 
   return (
@@ -825,21 +863,38 @@ export default function KahaScreen() {
             <Text style={[styles.topTitle, { color: colors.text }]}>{activeSection}</Text>
           </View>
         </View>
-        <AnimatedPressable
-          onPress={toggleTheme}
-          style={({ pressed }) => [{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            backgroundColor: colors.cardSecondary,
-            borderWidth: 1,
-            borderColor: colors.border,
-            alignItems: "center",
-            justifyContent: "center",
-          }, pressed && styles.pressed]}
-        >
-          <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
-        </AnimatedPressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <AnimatedPressable
+            onPress={handleResetDemo}
+            style={({ pressed }) => [{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: colors.errorContainer || "#FEE2E2",
+              borderWidth: 1,
+              borderColor: colors.error || "#B91C1C",
+              alignItems: "center",
+              justifyContent: "center",
+            }, pressed && styles.pressed]}
+          >
+            <Text style={{ fontSize: 18 }}>🔄</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={toggleTheme}
+            style={({ pressed }) => [{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: colors.cardSecondary,
+              borderWidth: 1,
+              borderColor: colors.border,
+              alignItems: "center",
+              justifyContent: "center",
+            }, pressed && styles.pressed]}
+          >
+            <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+          </AnimatedPressable>
+        </View>
       </View>
 
       {/* Wallet info row */}
@@ -1720,7 +1775,7 @@ function LoadingScreen() {
   );
 }
 
-function WalletConnectionGate({ onConnect }) {
+function WalletConnectionGate({ onConnect, onReset }) {
   const { theme, toggleTheme, colors } = useTheme();
   const [publicKey, setPublicKey] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -1752,21 +1807,40 @@ function WalletConnectionGate({ onConnect }) {
           <Text style={{ fontSize: 24, color: colors.primary }}>🔑</Text>
           <Text style={[styles.title, { color: colors.primary, fontSize: 22, fontWeight: "800", marginBottom: 0 }]}>SariSync</Text>
         </View>
-        <AnimatedPressable
-          onPress={toggleTheme}
-          style={({ pressed }) => [
-            {
-              padding: 8,
-              borderRadius: 99,
-              backgroundColor: colors.cardSecondary,
-              borderWidth: 1,
-              borderColor: colors.border,
-            },
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
-        </AnimatedPressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {onReset && (
+            <AnimatedPressable
+              onPress={onReset}
+              style={({ pressed }) => [
+                {
+                  padding: 8,
+                  borderRadius: 99,
+                  backgroundColor: colors.errorContainer || "#FEE2E2",
+                  borderWidth: 1,
+                  borderColor: colors.error || "#B91C1C",
+                },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={{ fontSize: 18 }}>🔄</Text>
+            </AnimatedPressable>
+          )}
+          <AnimatedPressable
+            onPress={toggleTheme}
+            style={({ pressed }) => [
+              {
+                padding: 8,
+                borderRadius: 99,
+                backgroundColor: colors.cardSecondary,
+                borderWidth: 1,
+                borderColor: colors.border,
+              },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+          </AnimatedPressable>
+        </View>
       </View>
 
       {/* Main Connection Card */}
