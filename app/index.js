@@ -243,9 +243,9 @@ export default function KahaScreen() {
   const stageMeta = getStageMetadata(stage);
   const loanLimit = getLoanLimitForStage(stage);
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
-  const displayScore = (!network.isOffline && onChainScore !== null) ? onChainScore : tiwalaScore;
-  const displayLimit = (!network.isOffline && onChainLimit !== null) ? onChainLimit : loanLimit;
-  const displayOutstandingBalance = (!network.isOffline && onChainOutstandingBalance !== null) ? onChainOutstandingBalance : outstandingBalance;
+  const displayScore = (syncedLedger.length === 0 && pendingQueue.length === 0) ? 30 : ((!network.isOffline && onChainScore !== null) ? onChainScore : tiwalaScore);
+  const displayLimit = (syncedLedger.length === 0 && pendingQueue.length === 0) ? 0 : ((!network.isOffline && onChainLimit !== null) ? onChainLimit : loanLimit);
+  const displayOutstandingBalance = (syncedLedger.length === 0 && pendingQueue.length === 0) ? 0 : ((!network.isOffline && onChainOutstandingBalance !== null) ? onChainOutstandingBalance : outstandingBalance);
   // 4-D: pass live receipts; falls back to SAMPLE_BUSINESS_TRANSACTIONS when empty
   const businessSnapshot = useMemo(
     () => getBusinessSnapshot(syncedLedger, [...receipts, ...expenses]),
@@ -267,7 +267,7 @@ export default function KahaScreen() {
   const isLoading = !network.hasCheckedInitialStatus || !isLedgerReady || !isWalletReady || isContextLoading || !hasCompletedOnboarding;
 
   const refreshLedger = useCallback(async () => {
-    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords, liveOutstandingBalance, savedCashOut] = await Promise.all([
+    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords, liveOutstandingBalance, savedCashOut, demoResetActive] = await Promise.all([
       getPendingSyncQueue(),
       getSyncedSalesLedger(),
       getReceipts(),
@@ -275,7 +275,8 @@ export default function KahaScreen() {
       getOfflineDrafts(),
       getExpenseLedger(),
       getOutstandingLoanBalance(),
-      AsyncStorage.getItem("sarisync:cashOutTotal")
+      AsyncStorage.getItem("sarisync:cashOutTotal"),
+      AsyncStorage.getItem("sarisync:demoResetActive")
     ]);
     setPendingQueue(queue);
     setSyncedLedger(ledger);
@@ -286,15 +287,23 @@ export default function KahaScreen() {
     setOutstandingBalance(liveOutstandingBalance);
     setCashOutTotal(savedCashOut ? Number(savedCashOut) : 0);
 
+    if (demoResetActive === "true") {
+      setOnChainScore(null);
+      setOnChainLimit(null);
+      setOnChainOutstandingBalance(null);
+    }
+
     if (!network.isOffline) {
       try {
         const wallet = await getWalletConnection();
         if (wallet && wallet.publicKey) {
           const [profile, balances] = await Promise.all([
-            fetchOnChainProfile(wallet.publicKey).catch((err) => {
-              console.warn("[SorobanService] Profile query failed:", err);
-              return null;
-            }),
+            demoResetActive === "true"
+              ? Promise.resolve(null)
+              : fetchOnChainProfile(wallet.publicKey).catch((err) => {
+                  console.warn("[SorobanService] Profile query failed:", err);
+                  return null;
+                }),
             fetchLiveWalletBalances(wallet.publicKey).catch((err) => {
               console.warn("[StellarService] Balances query failed:", err);
               if (err.status === 404 || err.message?.includes("404") || err.name === "NotFoundError") {
@@ -320,6 +329,12 @@ export default function KahaScreen() {
     }
     setIsLedgerReady(true);
   }, [network.isOffline]);
+
+  const syncProfileToChainAndClearReset = useCallback(async (storeSecretKey, score, limit, outstandingBalance = 0) => {
+    const result = await syncProfileToChain(storeSecretKey, score, limit, outstandingBalance);
+    await AsyncStorage.removeItem("sarisync:demoResetActive");
+    return result;
+  }, []);
 
   const checkStageUpgrade = useCallback((oldTotal, newTotal) => {
     const oldStage = evaluateCreditStage(oldTotal);
@@ -390,7 +405,7 @@ export default function KahaScreen() {
           const currentOutstanding = await getOutstandingLoanBalance();
 
           try {
-            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit, currentOutstanding);
+            const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, newScore, newLimit, currentOutstanding);
             setOnChainScore(syncResult.confirmedScore);
             setOnChainLimit(syncResult.confirmedLimit);
             setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
@@ -450,7 +465,7 @@ export default function KahaScreen() {
                 setIsSyncingOnChain(true);
                 try {
                   setStatusMessage("Updating your store profile...");
-                  const syncResult = await syncProfileToChain(storeSecretKey, localScore, localLimit, localOutstanding);
+                  const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, localScore, localLimit, localOutstanding);
                   setOnChainScore(syncResult.confirmedScore);
                   setOnChainLimit(syncResult.confirmedLimit);
                   setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
@@ -485,7 +500,7 @@ export default function KahaScreen() {
           setIsSyncingOnChain(true);
           try {
             setStatusMessage("Syncing your Trust Profile to the secure network...");
-            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit, currentOutstanding);
+            const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, newScore, newLimit, currentOutstanding);
             // 1. Eagerly push confirmed on-chain values the moment the tx finalises
             setOnChainScore(syncResult.confirmedScore);
             setOnChainLimit(syncResult.confirmedLimit);
@@ -565,7 +580,7 @@ export default function KahaScreen() {
             const currentOutstanding = await getOutstandingLoanBalance();
 
             setStatusMessage("Syncing your Trust Profile to the secure network...");
-            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit, currentOutstanding);
+            const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, newScore, newLimit, currentOutstanding);
 
             // 1. Eagerly push confirmed on-chain values as soon as tx finalises on Soroban
             setOnChainScore(syncResult.confirmedScore);
@@ -645,6 +660,7 @@ export default function KahaScreen() {
       publicKey,
     });
     setWalletConnection(connection);
+    await AsyncStorage.removeItem("sarisync:demoResetActive");
   }
 
   async function handleCreateDocument() {
@@ -714,7 +730,7 @@ export default function KahaScreen() {
           const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
 
           setStatusMessage("Syncing outstanding loan balance to the blockchain...");
-          const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, newOutstanding);
+          const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, currentScore, currentLimit, newOutstanding);
           setOnChainScore(syncResult.confirmedScore);
           setOnChainLimit(syncResult.confirmedLimit);
           setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
@@ -777,7 +793,7 @@ export default function KahaScreen() {
           const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
 
           setStatusMessage("Syncing outstanding loan balance to the blockchain...");
-          const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, newOutstanding);
+          const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, currentScore, currentLimit, newOutstanding);
           setOnChainScore(syncResult.confirmedScore);
           setOnChainLimit(syncResult.confirmedLimit);
           setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
@@ -1074,7 +1090,7 @@ export default function KahaScreen() {
         />
       ) : null}
 
-        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} onChainScore={onChainScore} onChainLimit={onChainLimit} isOffline={network.isOffline} />
+        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={displayScore} loanLimit={displayLimit} onChainScore={null} onChainLimit={null} isOffline={network.isOffline} />
         </>
       ) : null}
       {activeSection === "Tracker" ? (
@@ -1613,7 +1629,7 @@ export default function KahaScreen() {
                               const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
                               const currentOutstanding = await getOutstandingLoanBalance();
 
-                              const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, currentOutstanding);
+                              const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, currentScore, currentLimit, currentOutstanding);
                               setOnChainScore(syncResult.confirmedScore);
                               setOnChainLimit(syncResult.confirmedLimit);
                               setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);

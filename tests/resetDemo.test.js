@@ -41,6 +41,10 @@ describe("reset demo functionality", () => {
       assert.ok(functionBody.includes(key), `Expected storage key '${key}' to be present in resetDemoData`);
     }
 
+    // Verify it sets demoResetActive to true on reset
+    assert.ok(functionBody.includes("sarisync:demoResetActive"), "Expected demoResetActive to be referenced in resetDemoData");
+    assert.ok(functionBody.includes("true"), "Expected demoResetActive to be set to true in resetDemoData");
+
     // Verify wallet connection and onboarding keys are preserved (not present in resetDemoData key list)
     const preservedKeys = [
       "sarisync:walletConnection",
@@ -75,5 +79,16 @@ describe("reset demo functionality", () => {
     // 5. Verify dev reset button (🔄) is rendered in WalletConnectionGate
     assert.ok(appSource.includes("WalletConnectionGate onConnect={handleConnectWallet} onReset={handleResetDemo}"), "Expected WalletConnectionGate to receive onReset prop");
     assert.ok(appSource.includes("function WalletConnectionGate({ onConnect, onReset })"), "Expected WalletConnectionGate definition to accept onReset");
+
+    // 6. Verify demoResetActive checks and ProfilePanel overrides
+    assert.ok(appSource.includes("sarisync:demoResetActive"), "Expected app to load and check demoResetActive key");
+    assert.ok(appSource.includes("ProfilePanel"), "Expected ProfilePanel to be instantiated");
+    assert.ok(appSource.includes("tiwalaScore={displayScore}"), "Expected ProfilePanel to use displayScore for tiwalaScore prop");
+    assert.ok(appSource.includes("loanLimit={displayLimit}"), "Expected ProfilePanel to use displayLimit for loanLimit prop");
+    assert.ok(appSource.includes("onChainScore={null}"), "Expected ProfilePanel to receive null for onChainScore prop");
+    assert.ok(appSource.includes("onChainLimit={null}"), "Expected ProfilePanel to receive null for onChainLimit prop");
+
+    // 7. Verify helper for syncing and clearing reset active flag
+    assert.ok(appSource.includes("syncProfileToChainAndClearReset"), "Expected syncProfileToChainAndClearReset helper definition and usage");
   });
 });

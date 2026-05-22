@@ -367,5 +367,6 @@ export async function resetDemoData() {
     'sarisync:cashOutTotal'
   ];
   await AsyncStorage.multiRemove(keys);
+  await AsyncStorage.setItem('sarisync:demoResetActive', 'true');
 }
 
