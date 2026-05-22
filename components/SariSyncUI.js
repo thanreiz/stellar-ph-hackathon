@@ -1,4 +1,4 @@
-import React, { useRef } from "react";
+import React, { useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useTheme } from "../context/ThemeContext";
@@ -7,8 +7,10 @@ const AnimatedPressableComponent = Animated.createAnimatedComponent(Pressable);
 
 export function AnimatedPressable({ children, onPress, style, disabled, ...props }) {
   const scale = useRef(new Animated.Value(1)).current;
+  const [pressed, setPressed] = useState(false);
 
-  const handlePressIn = () => {
+  const handlePressIn = (e) => {
+    setPressed(true);
     if (disabled) return;
     Animated.spring(scale, {
       toValue: 0.95,
@@ -16,9 +18,11 @@ export function AnimatedPressable({ children, onPress, style, disabled, ...props
       tension: 180,
       friction: 6,
     }).start();
+    if (props.onPressIn) props.onPressIn(e);
   };
 
-  const handlePressOut = () => {
+  const handlePressOut = (e) => {
+    setPressed(false);
     if (disabled) return;
     Animated.spring(scale, {
       toValue: 1,
@@ -26,7 +30,12 @@ export function AnimatedPressable({ children, onPress, style, disabled, ...props
       tension: 180,
       friction: 6,
     }).start();
+    if (props.onPressOut) props.onPressOut(e);
   };
+
+  const resolvedStyle = typeof style === "function" ? style({ pressed }) : style;
+  const flattened = StyleSheet.flatten(resolvedStyle) || {};
+  const existingTransforms = flattened.transform || [];
 
   return (
     <AnimatedPressableComponent
@@ -34,20 +43,15 @@ export function AnimatedPressable({ children, onPress, style, disabled, ...props
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
-      style={(state) => {
-        const resolvedStyle = typeof style === "function" ? style(state) : style;
-        const flattened = StyleSheet.flatten(resolvedStyle) || {};
-        const existingTransforms = flattened.transform || [];
-        return [
-          resolvedStyle,
-          {
-            transform: [...existingTransforms, { scale }],
-          },
-        ];
-      }}
+      style={[
+        resolvedStyle,
+        {
+          transform: [...existingTransforms, { scale }],
+        },
+      ]}
       {...props}
     >
-      {children}
+      {typeof children === "function" ? children({ pressed }) : children}
     </AnimatedPressableComponent>
   );
 }
