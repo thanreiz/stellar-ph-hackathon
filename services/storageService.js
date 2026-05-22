@@ -31,7 +31,7 @@ export function createSalesPayload(amount, paymentSource = 'cash') {
   const parsedAmount = Number(amount);
 
   if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-    throw new Error('Benta amount must be a positive number.');
+    throw new Error('Sales amount must be a positive number.');
   }
 
   return {
@@ -80,7 +80,7 @@ export async function getPendingSyncQueue() {
 
 export async function enqueuePendingSale(salesPayload) {
   if (!salesPayload || typeof salesPayload.amount !== 'number') {
-    throw new Error('Invalid Benta payload.');
+    throw new Error('Invalid sales payload.');
   }
 
   const currentQueue = await getPendingSyncQueue();

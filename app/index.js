@@ -117,9 +117,9 @@ const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
 const isPublic = process.env.EXPO_PUBLIC_STELLAR_NETWORK === "public" || process.env.EXPO_PUBLIC_STELLAR_NETWORK === "mainnet";
 
 const NAV_ITEMS = [
-  { id: "Kaha", label: "Kaha", icon: "wallet" },
+  { id: "Kaha", label: "Ledger", icon: "wallet" },
   { id: "Tracker", label: "Tracker", icon: "trend" },
-  { id: "Utang", label: "Utang", icon: "loan" },
+  { id: "Utang", label: "Loans", icon: "loan" },
   { id: "Proof", label: "Proof", icon: "proof" },
 ];
 const EXPENSE_PAYMENT_SOURCES = [
@@ -609,7 +609,7 @@ export default function KahaScreen() {
       setBentaAmount("");
       setBentaSource("cash");
     } catch (error) {
-      Alert.alert("Benta error", error.message);
+      Alert.alert("Sales error", error.message);
     } finally {
       setIsSavingBenta(false);
     }
@@ -931,7 +931,7 @@ export default function KahaScreen() {
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, borderRadius: 24 }]}>
         <View>
           <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Tindahan Cash
+            Store Cash
           </Text>
           <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
             {network.isOffline ? "Saved locally" : formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
@@ -944,7 +944,7 @@ export default function KahaScreen() {
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              Benta
+              Sales
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
               {network.isOffline ? "Hidden offline" : formatPhp(totalSyncedBenta)}
@@ -952,7 +952,7 @@ export default function KahaScreen() {
           </View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              Net Cash Benta
+              Net Cash Sales
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
               {network.isOffline ? "Hidden offline" : formatPhp(netCashBenta)}
@@ -990,20 +990,20 @@ export default function KahaScreen() {
       <View style={styles.bentoHero}>
         <View style={styles.bentoMetricCell}>
           <BentoMetricCard
-            label="Benta"
+            label="Sales"
             value={formatPhp(timeRange === "today" ? salesToday : totalSyncedBenta)}
             tone="positive"
           />
         </View>
         <View style={styles.bentoMetricCell}>
           <BentoMetricCard
-            label="Gastos"
+            label="Expenses"
             value={formatPhp(timeRange === "today" ? expenseToday : expenseTotal)}
             tone="expense"
           />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Tiwala Score" value={`${displayScore}`} />
+          <BentoMetricCard label="Trust Score" value={`${displayScore}`} />
         </View>
         <View style={styles.bentoMetricCell}>
           <BentoMetricCard label="Limit" value={formatPhp(displayLimit)} tone="positive" />
@@ -1015,8 +1015,8 @@ export default function KahaScreen() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
             {stage === CREDIT_STAGES.CORNER_STORE
-              ? "Tiwala Score at Limit: Max Stage"
-              : `Tiwala Score at Limit: ${formatStageLabel(stage, stageMeta)}`}
+              ? "Trust Score & Limit: Max Stage"
+              : `Trust Score & Limit: ${formatStageLabel(stage, stageMeta)}`}
           </Text>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.primary }}>
             {stage === CREDIT_STAGES.READ_ONLY
@@ -1054,7 +1054,7 @@ export default function KahaScreen() {
 
       <View style={styles.quickActionRow}>
         <QuickAction
-          label="Record Benta / Gastos"
+          label="Record Sales / Expenses"
           helper="Cash / banks"
           tone="dual"
           onPress={() => {
@@ -1141,12 +1141,12 @@ export default function KahaScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>
-              {activeRecordTab === "benta" ? "Record Benta" : "Record Gastos"}
+              {activeRecordTab === "benta" ? "Record Sales" : "Record Expenses"}
             </Text>
             <Text style={[styles.bodyText, { color: colors.textSecondary, marginBottom: 14 }]}>
               What happened?
             </Text>
-
+ 
              {/* Tab Selector */}
             <View style={{ marginBottom: 16 }}>
               <SegmentedControl
@@ -1157,16 +1157,16 @@ export default function KahaScreen() {
                   setActiveRecordTab(nextTab);
                 }}
                 options={[
-                  { id: "benta", label: "Benta" },
-                  { id: "gastos", label: "Gastos" },
+                  { id: "benta", label: "Sales" },
+                  { id: "gastos", label: "Expenses" },
                 ]}
               />
             </View>
-
+ 
             {/* Form Fields based on Active Tab */}
             {activeRecordTab === "benta" ? (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Halaga</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Amount</Text>
                 <TextInput
                   value={bentaAmount}
                   onChangeText={setBentaAmount}
@@ -1175,7 +1175,7 @@ export default function KahaScreen() {
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
-
+ 
                 <AnimatedPressable
                   accessibilityRole="button"
                   disabled={isSavingBenta}
@@ -1188,13 +1188,13 @@ export default function KahaScreen() {
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    {isSavingBenta ? "Saving..." : "Save Benta"}
+                    {isSavingBenta ? "Saving..." : "Save Sales"}
                   </Text>
                 </AnimatedPressable>
               </View>
             ) : (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Halaga</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Amount</Text>
                 <TextInput
                   value={expenseAmount}
                   onChangeText={setExpenseAmount}
@@ -1203,7 +1203,7 @@ export default function KahaScreen() {
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
-                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Pinambayad</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Payment Source</Text>
                 <View style={[styles.rangeRow, { flexWrap: "wrap", gap: 6 }]}>
                   {EXPENSE_PAYMENT_SOURCES.map((source) => (
                     <AnimatedPressable
@@ -1240,7 +1240,7 @@ export default function KahaScreen() {
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    {isSavingExpense ? "Saving..." : "Save Gastos"}
+                    {isSavingExpense ? "Saving..." : "Save Expenses"}
                   </Text>
                 </AnimatedPressable>
               </View>
@@ -1717,7 +1717,7 @@ export default function KahaScreen() {
 }
 
 const LOADING_MESSAGES = [
-  "Connecting Kaha...",
+  "Connecting Ledger...",
   "Preparing Lists...",
   "Syncing Loans...",
   "Counting Stocks...",
@@ -1852,7 +1852,7 @@ function WalletConnectionGate({ onConnect, onReset }) {
             <Text style={{ color: theme === "light" ? "#005427" : "#A6F8B4", fontSize: 12, fontWeight: "700" }}>Connect Wallet</Text>
           </View>
           <Text style={[styles.bodyText, { color: colors.textSecondary, textAlign: "center", fontSize: 15, paddingHorizontal: 8 }]}>
-            Connect wallet to prepare Kaha, while records are secured in the background.
+            Connect wallet to prepare Ledger, while records are secured in the background.
           </Text>
         </View>
 
@@ -2013,12 +2013,12 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Tracker</Text>
-      <Text style={[styles.stageName, { color: colors.text }]}>Araw-araw na galaw ng tindahan</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Daily store activity</Text>
       <View style={styles.metricsGrid}>
-        <MiniMetric label="Gastos" value={formatPhp(snapshot.spent)} color={colors.expense} />
-        <MiniMetric label="Benta" value={formatPhp(snapshot.earned)} color={colors.primary} />
-        <MiniMetric label="Puhunan" value={formatPhp(snapshot.capital + loanCapital)} color={colors.tertiary} />
-        <MiniMetric label="Utang" value={formatPhp(loanCapital)} color={colors.error} />
+        <MiniMetric label="Expenses" value={formatPhp(snapshot.spent)} color={colors.expense} />
+        <MiniMetric label="Sales" value={formatPhp(snapshot.earned)} color={colors.primary} />
+        <MiniMetric label="Capital" value={formatPhp(snapshot.capital + loanCapital)} color={colors.tertiary} />
+        <MiniMetric label="Loans" value={formatPhp(loanCapital)} color={colors.error} />
       </View>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
@@ -2055,7 +2055,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
               ]}
             >
               <Text style={[styles.loanButtonText, { color: buttonDisabled ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
-                {!controlState.canTransact ? "Offline" : isReadOnly ? "Locked" : isTooHigh ? "Too High" : "Humingi"}
+                {!controlState.canTransact ? "Offline" : isReadOnly ? "Locked" : isTooHigh ? "Too High" : "Request"}
               </Text>
             </AnimatedPressable>
           </View>
@@ -2156,15 +2156,15 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Utang</Text>
-      <Text style={[styles.stageName, { color: colors.text }]}>Manage loans and bayad</Text>
+      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Loans</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Manage loans and payments</Text>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
 
       <View style={styles.metricsGrid}>
-        <MiniMetric label="Active Utang" value={formatPhp(outstandingBalance)} color={colors.error} />
+        <MiniMetric label="Active Loans" value={formatPhp(outstandingBalance)} color={colors.error} />
         <MiniMetric label="Loan Limit" value={formatPhp(loanLimit)} color={colors.primary} />
-        <MiniMetric label="Draft Bayad" value={String(repaymentDrafts.length)} color={colors.expense} />
+        <MiniMetric label="Draft Payments" value={String(repaymentDrafts.length)} color={colors.expense} />
         <MiniMetric label="Paid Loans" value={String(paidLoans.length)} color={colors.success} />
       </View>
 
@@ -2194,7 +2194,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 ]}
               >
                 <Text style={styles.bayadButtonText}>
-                  {!controlState.canTransact ? "Draft" : "Bayad"}
+                  {!controlState.canTransact ? "Draft" : "Repay"}
                 </Text>
               </AnimatedPressable>
             </View>
@@ -2206,7 +2206,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
         <View style={[styles.readOnlyBanner, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
           <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Pending local work</Text>
           <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
-            {repaymentDrafts.length} Bayad draft saved on this phone.
+            {repaymentDrafts.length} Repayment draft saved on this phone.
           </Text>
         </View>
       ) : null}
@@ -2401,7 +2401,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
           pressed && styles.pressed,
         ]}
       >
-        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Gumawa ng Dokumento</Text>
+        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Create Document</Text>
       </AnimatedPressable>
       {documentStatusMessage ? (
         <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary, textAlign: "center" }]}>

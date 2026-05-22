@@ -1,1 +1,0 @@
-/Users/ethan/Desktop/stellar-ph-hackathon/contracts/sarisync_contract/target/wasm32-unknown-unknown/release/sarisync_contract.wasm: /Users/ethan/Desktop/stellar-ph-hackathon/contracts/sarisync_contract/src/lib.rs

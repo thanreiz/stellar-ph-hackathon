@@ -27,10 +27,10 @@ function assertMatches(source, pattern, message = `Expected source to match ${pa
 }
 
 describe("mobile demo configuration", () => {
-  it("declares Expo as an iOS and Android app only", () => {
+  it("declares Expo as an iOS, Android, and web app", () => {
     const appConfig = JSON.parse(readProjectFile("app.json"));
 
-    assert.deepEqual(appConfig.expo.platforms, ["ios", "android"]);
+    assert.deepEqual(appConfig.expo.platforms, ["ios", "android", "web"]);
   });
 
   it("documents mobile demo commands instead of web preview deployment", () => {
@@ -101,12 +101,12 @@ describe("mobile demo configuration", () => {
     assert.match(source, /appendOfflineDraft/);
   });
 
-  it("tracks expenses with approved Filipino-friendly payment sources", () => {
+  it("tracks expenses with approved payment sources", () => {
     const source = readProjectFile("app/index.js");
     const storage = readProjectFile("services/storageService.js");
 
-    assertIncludes(source, "Gastos");
-    assertIncludes(source, "Pinambayad");
+    assertIncludes(source, "Expenses");
+    assertIncludes(source, "Payment Source");
     assertExcludes(source, "Log expense", "Old default expense card label should be replaced.");
     assertExcludes(source, "Expense source", "Old default payment source label should be replaced.");
     assert.match(source, /Cash/);
@@ -125,13 +125,13 @@ describe("mobile demo configuration", () => {
     assert.match(source, /Online ledger hidden until internet returns/);
   });
 
-  it("uses approved Choice A Filipino fintech nav labels and icons", () => {
+  it("uses approved Choice A fintech nav labels and icons", () => {
     const source = readProjectFile("app/index.js");
     const uiSource = readProjectFile("components/SariSyncUI.js");
 
-    assertMatches(source, /label:\s*"Kaha"/, "Expected Kaha tab label.");
+    assertMatches(source, /label:\s*"Ledger"/, "Expected Ledger tab label.");
     assertMatches(source, /label:\s*"Tracker"/, "Expected Tracker tab label.");
-    assertMatches(source, /label:\s*"Utang"/, "Expected Utang tab label.");
+    assertMatches(source, /label:\s*"Loans"/, "Expected Loans tab label.");
     assertMatches(source, /label:\s*"Proof"/, "Expected Proof tab label.");
     assertMatches(source, /icon:\s*"wallet"/, "Expected wallet nav icon.");
     assertMatches(source, /icon:\s*"trend"/, "Expected trend nav icon.");
@@ -141,20 +141,20 @@ describe("mobile demo configuration", () => {
     assertIncludes(uiSource, "function AppIcon");
   });
 
-  it("uses big Filipino-friendly dashboard metrics", () => {
+  it("uses big dashboard metrics", () => {
     const source = readProjectFile("app/index.js");
     const uiSource = readProjectFile("components/SariSyncUI.js");
     const metricCardUsages = source.match(/<BentoMetricCard\b/g) ?? [];
 
-    assertIncludes(source, "Benta");
-    assertIncludes(source, "Gastos");
-    assertIncludes(source, "Tiwala Score");
+    assertIncludes(source, "Sales");
+    assertIncludes(source, "Expenses");
+    assertIncludes(source, "Trust Score");
     assertMatches(
       source,
       /<BentoMetricCard\b[^>]*\blabel="Limit"/,
       "Expected the dashboard bento metric label to be exactly Limit.",
     );
-    assertIncludes(source, "Tindahan Cash");
+    assertIncludes(source, "Store Cash");
     assert.ok(
       metricCardUsages.length >= 4,
       `Expected at least four BentoMetricCard usages, found ${metricCardUsages.length}.`,
@@ -174,18 +174,17 @@ describe("mobile demo configuration", () => {
     assertExcludes(onboarding, "Freighter Wallet Connection Gate");
   });
 
-  it("uses phone-friendly Benta and Gastos record modal labels", () => {
+  it("uses phone-friendly Sales and Expenses record modal labels", () => {
     const source = readProjectFile("app/index.js");
 
-    assertIncludes(source, "Benta");
-    assertIncludes(source, "Gastos");
-    assertIncludes(source, "Halaga");
-    assertIncludes(source, "Pinambayad");
-    assertIncludes(source, "Save Benta");
-    assertIncludes(source, "Save Gastos");
+    assertIncludes(source, "Sales");
+    assertIncludes(source, "Expenses");
+    assertIncludes(source, "Amount");
+    assertIncludes(source, "Payment Source");
+    assertIncludes(source, "Save Sales");
+    assertIncludes(source, "Save Expenses");
     assertExcludes(source, "Sales (Inflow)");
     assertExcludes(source, "Expenses (Outflow)");
-    assertExcludes(source, "Record Expenses");
     assertExcludes(source, "Payment Method");
   });
 
@@ -194,7 +193,7 @@ describe("mobile demo configuration", () => {
 
     assertIncludes(source, "Proof hidden");
     assertIncludes(source, "Tap to view transaction details");
-    assertIncludes(source, "Gumawa ng Dokumento");
+    assertIncludes(source, "Create Document");
     assertIncludes(source, "Proof center");
     assertIncludes(source, "Transaction details");
     assertIncludes(source, "proofDetailsCard");
@@ -202,7 +201,7 @@ describe("mobile demo configuration", () => {
       /ProofHint|isProofDetailsOpen|setProofDetailsOpen|proofDetailsOpen|showProofDetails/.test(source),
       "Expected source evidence that technical proof details are collapsed behind a friendly proof hint/state.",
     );
-    assertExcludes(source, "Create Document");
+    assertExcludes(source, "Gumawa ng Dokumento");
   });
 
 
@@ -223,8 +222,8 @@ describe("mobile demo configuration", () => {
   it("uses Stitch Choice A section subtitles and offline banner copy", () => {
     const source = readProjectFile("app/index.js");
 
-    assertIncludes(source, "Araw-araw na galaw ng tindahan");
-    assertIncludes(source, "Manage loans and bayad");
+    assertIncludes(source, "Daily store activity");
+    assertIncludes(source, "Manage loans and payments");
     assertIncludes(source, "Receipts and records");
     assertIncludes(source, "Saved on this phone");
     assertIncludes(source, "Online mode");
@@ -234,10 +233,10 @@ describe("mobile demo configuration", () => {
   it("uses the approved Stitch record modal controls", () => {
     const source = readProjectFile("app/index.js");
 
-    assertIncludes(source, "Record Benta");
-    assertIncludes(source, "Record Gastos");
+    assertIncludes(source, "Record Sales");
+    assertIncludes(source, "Record Expenses");
     assertIncludes(source, "What happened?");
-    assertIncludes(source, "Save Benta");
-    assertIncludes(source, "Save Gastos");
+    assertIncludes(source, "Save Sales");
+    assertIncludes(source, "Save Expenses");
   });
 });

@@ -7,3 +7,6 @@ dist-web/
 output/
 .DS_Store
 .env
+dist-android/
+dist-ios/
+contracts/sarisync_contract/target/
