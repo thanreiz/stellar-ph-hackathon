@@ -1,5 +1,9 @@
 # SariSync Ledger (Kaha)
 
+<p align="center">
+  <img src="assets/logo.png" width="160" alt="SariSync Logo" />
+</p>
+
 [![Stack](https://img.shields.io/badge/stack-React%20Native%20%7C%20Expo%20%7C%20JavaScript-7c3aed)](https://github.com/thanreiz/stellar-ph-hackathon)
 [![Network](https://img.shields.io/badge/stellar-testnet-0d6c63)](https://stellar.expert/explorer/testnet/account/GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2)
 [![Soroban Contract](https://img.shields.io/badge/soroban%20contract-CDUE6YHQ-6366f1)](https://stellar.expert/explorer/testnet/contract/CDUE6YHQ5OIIPBLROKUXVIW7HWTPPI4NVNYWA2IKARD6JNH5AYUUQ2OR)

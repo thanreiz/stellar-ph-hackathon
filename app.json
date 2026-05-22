@@ -9,14 +9,20 @@
     ],
     "orientation": "portrait",
     "scheme": "sarisync",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.hackathon.sarisyncledger"
+      "bundleIdentifier": "com.hackathon.sarisyncledger",
+      "icon": "./assets/icon.png"
     },
     "android": {
-      "package": "com.hackathon.sarisyncledger"
+      "package": "com.hackathon.sarisyncledger",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FCFDF9"
+      }
     },
     "plugins": [
       "expo-router",

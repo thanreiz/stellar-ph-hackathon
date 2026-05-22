@@ -9,6 +9,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -96,7 +97,11 @@ export default function OnboardingScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.emoji, { color: colors.primary }]}>🏪</Text>
+          <Image
+            source={require("../assets/logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={[styles.title, { color: colors.text }]}>SariSync</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Kaha, utang, and proof for your sari-sari store. Your records are secured in the background.
@@ -263,6 +268,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginVertical: 10,
     gap: 6,
+  },
+  logo: {
+    width: 120,
+    height: 120,
+    marginBottom: 8,
   },
   emoji: {
     fontSize: 48,

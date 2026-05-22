@@ -4,20 +4,24 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useTheme } from "../context/ThemeContext";
 
 const ICONS = {
-  wallet: "₱",
+  wallet: "▣",
   trend: "↗",
-  loan: "¤",
+  loan: "₱",
   proof: "✓",
   moon: "☾",
   sun: "☀",
   key: "🔑",
+  offline: "!",
+  online: "✓",
 };
 
 const TONES = {
   default: "primary",
+  positive: "success",
   income: "success",
   expense: "expense",
   proof: "tertiary",
+  neutral: "text",
 };
 
 function AppIcon({ name, active = false, size = 24 }) {
@@ -258,6 +262,85 @@ function QuickAction({ label, helper, onPress, disabled = false, tone = "primary
   );
 }
 
+function StatusBanner({ title, body, tone = "default", icon, style }) {
+  const { colors } = useTheme();
+  const isOffline = tone === "offline";
+  const accent = isOffline ? colors.offline || colors.error : colors.success || colors.primary;
+  const background = isOffline ? colors.errorContainer : colors.primaryContainer;
+
+  return (
+    <View
+      style={[
+        styles.statusBanner,
+        { backgroundColor: background, borderColor: accent },
+        style,
+      ]}
+    >
+      <AppIcon name={icon || (isOffline ? "offline" : "online")} active size={18} />
+      <View style={styles.statusBannerCopy}>
+        <Text style={[styles.statusBannerTitle, { color: colors.text }]}>{title}</Text>
+        {body ? <Text style={[styles.statusBannerBody, { color: colors.textSecondary }]}>{body}</Text> : null}
+      </View>
+    </View>
+  );
+}
+
+function InfoRow({ label, value, tone = "default" }) {
+  const { colors } = useTheme();
+  const valueColor = tone === "expense" ? colors.expense : tone === "positive" ? colors.primary : colors.text;
+
+  return (
+    <View style={[styles.infoRow, { borderBottomColor: colors.border }]}>
+      <Text style={[styles.infoRowLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text
+        adjustsFontSizeToFit
+        minimumFontScale={0.72}
+        numberOfLines={1}
+        style={[styles.infoRowValue, { color: valueColor }]}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+function SegmentedControl({ options, value, onChange }) {
+  const { colors } = useTheme();
+
+  return (
+    <View style={[styles.segmentedControl, { backgroundColor: colors.surfaceLow, borderColor: colors.border }]}>
+      {options.map((option) => {
+        const active = option.id === value;
+
+        return (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            key={option.id}
+            onPress={() => onChange?.(option.id)}
+            style={({ pressed }) => [
+              styles.segmentedControlItem,
+              {
+                backgroundColor: active ? colors.primary : "transparent",
+                opacity: pressed ? 0.78 : 1,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.segmentedControlText,
+                { color: active ? colors.buttonTextOnPrimary : colors.textSecondary },
+              ]}
+            >
+              {option.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function ProofDetailsCard({ children }) {
   const { colors } = useTheme();
 
@@ -286,16 +369,16 @@ const styles = StyleSheet.create({
   iconNav: {
     borderRadius: 28,
     flexDirection: "row",
-    gap: 6,
-    padding: 6,
+    gap: 5,
+    padding: 5,
   },
   iconNavItem: {
     alignItems: "center",
-    borderRadius: 22,
+    borderRadius: 24,
     flex: 1,
     gap: 4,
     justifyContent: "center",
-    minHeight: 70,
+    minHeight: 66,
     paddingHorizontal: 6,
     paddingVertical: 8,
   },
@@ -315,7 +398,7 @@ const styles = StyleSheet.create({
   },
   metricCard: {
     flex: 1,
-    minHeight: 118,
+    minHeight: 126,
   },
   metricLabel: {
     fontSize: 13,
@@ -365,7 +448,7 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   quickAction: {
-    borderRadius: 18,
+    borderRadius: 22,
     borderWidth: 1,
     flex: 1,
     justifyContent: "center",
@@ -382,7 +465,7 @@ const styles = StyleSheet.create({
     opacity: 0.86,
   },
   quickActionLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "900",
     letterSpacing: 0,
   },
@@ -414,6 +497,72 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 18,
   },
+  statusBanner: {
+    alignItems: "center",
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  statusBannerBody: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0,
+    lineHeight: 17,
+  },
+  statusBannerCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  statusBannerTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 0,
+  },
+  infoRow: {
+    alignItems: "center",
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: 12,
+    justifyContent: "space-between",
+    minHeight: 42,
+    paddingVertical: 8,
+  },
+  infoRowLabel: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "800",
+    letterSpacing: 0,
+  },
+  infoRowValue: {
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0,
+    textAlign: "right",
+  },
+  segmentedControl: {
+    borderRadius: 999,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    padding: 4,
+  },
+  segmentedControlItem: {
+    alignItems: "center",
+    borderRadius: 999,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: 10,
+  },
+  segmentedControlText: {
+    fontSize: 14,
+    fontWeight: "900",
+    letterSpacing: 0,
+  },
 });
 
 export {
@@ -426,4 +575,7 @@ export {
   ProofHint,
   ProofDetailsCard,
   QuickAction,
+  StatusBanner,
+  InfoRow,
+  SegmentedControl,
 };

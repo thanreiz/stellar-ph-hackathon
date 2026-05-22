@@ -229,4 +229,25 @@ describe("mobile demo configuration", () => {
     assertExcludes(source, "I-Validate ang Stellar Invoice");
     assertExcludes(source, "I-paste ang transaction hash para i-verify sa Horizon Testnet");
   });
+
+  it("uses Stitch Choice A section subtitles and offline banner copy", () => {
+    const source = readProjectFile("app/index.js");
+
+    assertIncludes(source, "Araw-araw na galaw ng tindahan");
+    assertIncludes(source, "Manage loans and bayad");
+    assertIncludes(source, "Receipts and records");
+    assertIncludes(source, "Saved on this phone");
+    assertIncludes(source, "Online mode");
+    assertIncludes(source, "Offline mode");
+  });
+
+  it("uses the approved Stitch record modal controls", () => {
+    const source = readProjectFile("app/index.js");
+
+    assertIncludes(source, "Record Benta");
+    assertIncludes(source, "Record Gastos");
+    assertIncludes(source, "What happened?");
+    assertIncludes(source, "Save Benta");
+    assertIncludes(source, "Save Gastos");
+  });
 });
