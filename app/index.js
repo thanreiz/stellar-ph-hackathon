@@ -40,6 +40,7 @@ import {
   syncPendingSalesQueue,
   updateLoanStatus,
   appendReceipt,
+  saveOfflineDrafts,
 } from "../services/storageService";
 import {
   CREDIT_STAGES,
@@ -61,6 +62,7 @@ import {
   getDraftsReadyForSubmission,
   getOfflineCapabilities,
   summarizeOfflineWork,
+  syncOfflineDrafts,
 } from "../services/offlineDraftService";
 import {
   fetchLiveWalletBalances,
@@ -68,6 +70,7 @@ import {
   repayLoan,
   validateStellarTransaction,
   cashOutPHPC,
+  submitInventoryFinancingSettlement,
 } from "../services/stellarService";
 import { fetchOnChainProfile, syncProfileToChain } from "../services/sorobanService";
 import { generateReceiptDocument } from "../utils/documentGenerator";
@@ -206,6 +209,7 @@ export default function KahaScreen() {
   const [receipts, setReceipts] = useState([]); // 4-D: live receipts
   const [loans, setLoans] = useState([]); // microloan records
   const [offlineDrafts, setOfflineDrafts] = useState([]);
+  const [isSyncingDrafts, setIsSyncingDrafts] = useState(false);
   const [onChainScore, setOnChainScore] = useState(null);
   const [onChainLimit, setOnChainLimit] = useState(null);
   const [onChainOutstandingBalance, setOnChainOutstandingBalance] = useState(null);
@@ -346,11 +350,82 @@ export default function KahaScreen() {
       .finally(() => setIsWalletReady(true));
   }, []);
 
+  const handleSyncOfflineDrafts = useCallback(async () => {
+    if (isSyncingDrafts) return;
+    setIsSyncingDrafts(true);
+    setStatusMessage("Syncing offline drafts to the network...");
+
+    try {
+      const currentDrafts = await getOfflineDrafts();
+      const pendingDrafts = currentDrafts.filter(d => d.status === "pending_online_submission");
+      if (pendingDrafts.length === 0) {
+        setStatusMessage("No pending offline drafts to sync.");
+        setIsSyncingDrafts(false);
+        return;
+      }
+
+      const result = await syncOfflineDrafts({
+        drafts: currentDrafts,
+        repayLoanFn: repayLoan,
+        submitInvoiceFn: submitInventoryFinancingSettlement,
+        updateLoanStatusFn: updateLoanStatus,
+        getOutstandingLoanBalanceFn: getOutstandingLoanBalance,
+        setOutstandingLoanBalanceFn: setOutstandingLoanBalance,
+        appendReceiptFn: appendReceipt,
+      });
+
+      await saveOfflineDrafts(result.updatedDrafts);
+      setOfflineDrafts(result.updatedDrafts);
+
+      // Recalculate score and limit and sync to Stellar contract
+      const wallet = await getWalletConnection();
+      if (wallet && wallet.publicKey) {
+        const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+        if (storeSecretKey) {
+          const ledger = await getSyncedSalesLedger();
+          const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+          const newScore = calculateTiwalaScore(totalSyncedBenta);
+          const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+          const currentOutstanding = await getOutstandingLoanBalance();
+
+          try {
+            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit, currentOutstanding);
+            setOnChainScore(syncResult.confirmedScore);
+            setOnChainLimit(syncResult.confirmedLimit);
+            setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
+          } catch (sorobanError) {
+            console.warn("Soroban sync failed during draft sync:", sorobanError);
+          }
+        }
+      }
+
+      await refreshLedger();
+
+      if (result.failedCount > 0) {
+        setStatusMessage(`Sync completed: ${result.successCount} succeeded, ${result.failedCount} failed.`);
+      } else {
+        setStatusMessage(`Successfully synced ${result.successCount} offline draft(s).`);
+      }
+    } catch (error) {
+      console.error("Failed to sync offline drafts:", error);
+      setStatusMessage(`Draft sync failed: ${error.message}`);
+    } finally {
+      setIsSyncingDrafts(false);
+    }
+  }, [isSyncingDrafts, refreshLedger]);
+
   useEffect(() => {
     if (!network.hasCheckedInitialStatus || network.isOffline) return;
 
     async function syncWhenOnline() {
       try {
+        // Auto-sync pending drafts if any
+        const drafts = await getOfflineDrafts();
+        const hasPendingDrafts = drafts.some((d) => d.status === "pending_online_submission");
+        if (hasPendingDrafts) {
+          await handleSyncOfflineDrafts();
+        }
+
         const queue = await getPendingSyncQueue();
         if (queue.length === 0) {
           // If online and there are no pending sales to sync, check if the on-chain profile is out of sync
@@ -433,7 +508,7 @@ export default function KahaScreen() {
     }
 
     syncWhenOnline();
-  }, [network.hasCheckedInitialStatus, network.isOffline, refreshLedger, walletConnection?.publicKey]);
+  }, [network.hasCheckedInitialStatus, network.isOffline, refreshLedger, walletConnection?.publicKey, handleSyncOfflineDrafts]);
 
   // 4-B: rage-click guard — disable before the first await
   async function handleAddBenta() {
@@ -712,9 +787,11 @@ export default function KahaScreen() {
       return;
     }
 
-    setStatusMessage(
-      `Ready to submit ${draftsReadyForSubmission.length} offline payment draft(s). Review each draft before sending.`,
-    );
+    if (draftsReadyForSubmission.length > 0) {
+      handleSyncOfflineDrafts();
+    } else {
+      setStatusMessage("Offline sales are synced automatically when online.");
+    }
   }
 
   if (isLoading) {

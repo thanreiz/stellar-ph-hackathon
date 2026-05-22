@@ -327,6 +327,14 @@ export async function appendOfflineDraft(draft) {
   return updated;
 }
 
+export async function saveOfflineDrafts(drafts) {
+  if (!Array.isArray(drafts)) {
+    throw new Error('Drafts must be an array.');
+  }
+  await AsyncStorage.setItem(STORAGE_KEYS.OFFLINE_DRAFTS, JSON.stringify(drafts));
+  return drafts;
+}
+
 // ── Expense ledger ───────────────────────────────────────────────────────────
 
 export async function getExpenseLedger() {
