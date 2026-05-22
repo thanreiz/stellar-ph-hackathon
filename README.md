@@ -26,6 +26,7 @@ SariSync Ledger was built for the **Build on Stellar Philippines Hackathon** by 
 >
 > - Demo video: `[add demo video here]`
 > - Pitch deck: `[add pitch deck here]`
+> - Live deployment: [dist-kappa-kohl-83.vercel.app](https://dist-kappa-kohl-83.vercel.app)
 > - Android/iPhone demo screenshots: `[add pictures here]`
 > - Testnet store wallet: [`GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2`](https://stellar.expert/explorer/testnet/account/GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2)
 > - Soroban contract: [`CDUE6YHQ5OIIPBLROKUXVIW7HWTPPI4NVNYWA2IKARD6JNH5AYUUQ2OR`](https://stellar.expert/explorer/testnet/contract/CDUE6YHQ5OIIPBLROKUXVIW7HWTPPI4NVNYWA2IKARD6JNH5AYUUQ2OR)
@@ -182,6 +183,16 @@ npm run doctor
 ```
 
 > Note: this repo contains a native `android/` folder. Expo Doctor may warn that app config fields need prebuild syncing when native folders are present.
+
+---
+
+## Live Deployment
+
+The public demo deployment is available here:
+
+- [https://dist-kappa-kohl-83.vercel.app](https://dist-kappa-kohl-83.vercel.app)
+
+The main demo target remains mobile through Android Studio and iPhone, but this hosted build is available for quick review.
 
 ---
 
