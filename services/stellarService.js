@@ -41,12 +41,14 @@ function getEnvValue(key, fallback = "") {
 }
 
 function getStellarConfig() {
+  // NOTE: Must use static property access (not dynamic process.env[key])
+  // so Expo Metro bundler can inline values at web build time.
   return {
-    storeSecretKey: getEnvValue("EXPO_PUBLIC_STORE_SECRET_KEY"),
-    storePublicKey: getEnvValue("EXPO_PUBLIC_STORE_PUBLIC_KEY"),
-    phpcIssuer: getEnvValue("EXPO_PUBLIC_PHPC_ISSUER"),
-    usdcIssuer: getEnvValue("EXPO_PUBLIC_USDC_ISSUER"),
-    network: getEnvValue("EXPO_PUBLIC_STELLAR_NETWORK", "testnet"),
+    storeSecretKey: process.env.EXPO_PUBLIC_STORE_SECRET_KEY || "",
+    storePublicKey: process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "",
+    phpcIssuer: process.env.EXPO_PUBLIC_PHPC_ISSUER || "",
+    usdcIssuer: process.env.EXPO_PUBLIC_USDC_ISSUER || "",
+    network: process.env.EXPO_PUBLIC_STELLAR_NETWORK || "testnet",
   };
 }
 
@@ -449,6 +451,72 @@ export async function cashOutPHPC({ amountPhpc, memo = 'SariSync Cashout' }) {
           })
         )
         .addMemo(Memo.text(memo.slice(0, 28)))
+        .setTimeout(HORIZON_TRANSACTION_MAX_TIME_SECONDS)
+        .build();
+
+      transaction.sign(storeKeypair);
+      return transaction;
+    });
+
+    return { success: true, transactionHash: response.hash };
+  } catch (error) {
+    return { success: false, error: extractHorizonError(error) };
+  }
+}
+
+/**
+ * Cash In: convert XLM → USDC → PHPC via Stellar DEX path payment.
+ *
+ * The store signs a pathPaymentStrictReceive:
+ *   sendAsset  = XLM (native)
+ *   path       = [USDC]           ← USDC is the bridge hop
+ *   destAsset  = PHPC
+ *   destAmount = exact PHPC to receive
+ *   sendMax    = maximum XLM to spend (slippage guard)
+ *
+ * Requires DEX offers: XLM↔USDC and USDC↔PHPC must be live on the orderbook.
+ */
+export async function cashInXlmToPhpc({ amountPhpc, sendMaxXlm }) {
+  if (!amountPhpc || isNaN(parseFloat(amountPhpc))) {
+    return { success: false, error: 'amountPhpc is required and must be a numeric string.' };
+  }
+  if (!sendMaxXlm || isNaN(parseFloat(sendMaxXlm))) {
+    return { success: false, error: 'sendMaxXlm is required and must be a numeric string.' };
+  }
+
+  try {
+    const config = getStellarConfig();
+    validateConfig(config);
+
+    const server = getHorizonServer();
+    const storeKeypair = Keypair.fromSecret(config.storeSecretKey);
+    const xlmAsset = Asset.native();
+    const usdcAsset = new Asset('USDC', config.usdcIssuer);
+    const phpcAsset = new Asset('PHPC', config.phpcIssuer);
+
+    const destAmount = normalizeAmount(amountPhpc);
+    const sendMax = normalizeAmount(sendMaxXlm);
+
+    const response = await submitWithFreshTransaction(server, async () => {
+      const storeAccount = await server.loadAccount(config.storePublicKey);
+      const isPublic = config.network === 'public' || config.network === 'mainnet';
+      const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
+
+      const transaction = new TransactionBuilder(storeAccount, {
+        fee: BASE_FEE,
+        networkPassphrase,
+      })
+        .addOperation(
+          Operation.pathPaymentStrictReceive({
+            sendAsset: xlmAsset,
+            sendMax,
+            destination: config.storePublicKey, // self-swap: store receives PHPC
+            destAsset: phpcAsset,
+            destAmount,
+            path: [usdcAsset], // XLM → USDC → PHPC
+          })
+        )
+        .addMemo(Memo.text('SariSync CashIn'))
         .setTimeout(HORIZON_TRANSACTION_MAX_TIME_SECONDS)
         .build();
 

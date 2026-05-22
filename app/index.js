@@ -37,6 +37,7 @@ import {
   getSyncedSalesLedger,
   isValidStellarPublicKey,
   saveWalletConnection,
+  clearWalletConnection,
   syncPendingSalesQueue,
   updateLoanStatus,
   appendReceipt,
@@ -71,6 +72,7 @@ import {
   repayLoan,
   validateStellarTransaction,
   cashOutPHPC,
+  cashInXlmToPhpc,
   submitInventoryFinancingSettlement,
 } from "../services/stellarService";
 import { fetchOnChainProfile, syncProfileToChain } from "../services/sorobanService";
@@ -187,6 +189,15 @@ export default function KahaScreen() {
   const [cashOutTxHash, setCashOutTxHash] = useState("");
   const [simPhoneNumber, setSimPhoneNumber] = useState("");
   const [simOtp, setSimOtp] = useState("");
+
+  // Cash In (XLM → USDC → PHPC) States
+  const [isCashInModalVisible, setIsCashInModalVisible] = useState(false);
+  const [cashInXlmAmount, setCashInXlmAmount] = useState("");
+  const [cashInPhpcAmount, setCashInPhpcAmount] = useState("");
+  const [cashInStep, setCashInStep] = useState("form"); // "form" | "broadcasting" | "success"
+  const [cashInError, setCashInError] = useState("");
+  const [cashInTxHash, setCashInTxHash] = useState("");
+  const [cashInIsSubmitting, setCashInIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isContextLoading && !hasCompletedOnboarding) {
@@ -816,6 +827,42 @@ export default function KahaScreen() {
     }
   }
 
+  async function handleCashIn() {
+    if (cashInIsSubmitting) return;
+    setCashInError("");
+    const xlmAmt = parseFloat(cashInXlmAmount);
+    const phpcAmt = parseFloat(cashInPhpcAmount);
+    if (isNaN(xlmAmt) || xlmAmt <= 0) {
+      setCashInError("Please enter a valid XLM amount to spend.");
+      return;
+    }
+    if (isNaN(phpcAmt) || phpcAmt <= 0) {
+      setCashInError("Please enter how many PHPC you want to receive.");
+      return;
+    }
+    if (xlmAmt > Number(xlmBalance)) {
+      setCashInError("Insufficient XLM balance.");
+      return;
+    }
+    setCashInIsSubmitting(true);
+    setCashInStep("broadcasting");
+    try {
+      const result = await cashInXlmToPhpc({
+        amountPhpc: String(phpcAmt),
+        sendMaxXlm: String(xlmAmt),
+      });
+      if (!result.success) throw new Error(result.error);
+      setCashInTxHash(result.transactionHash);
+      await refreshLedger();
+      setCashInStep("success");
+    } catch (err) {
+      setCashInError("Cash In failed: " + err.message);
+      setCashInStep("form");
+    } finally {
+      setCashInIsSubmitting(false);
+    }
+  }
+
   function handleSubmitOfflineWork() {
     if (network.isOffline) {
       setStatusMessage(offlineCapabilities.message);
@@ -1064,6 +1111,20 @@ export default function KahaScreen() {
           }}
         />
         <QuickAction
+          label="Cash In"
+          helper={network.isOffline ? "Offline" : "XLM → PHPC"}
+          disabled={network.isOffline}
+          tone="positive"
+          onPress={() => {
+            setCashInXlmAmount("");
+            setCashInPhpcAmount("");
+            setCashInStep("form");
+            setCashInError("");
+            setCashInTxHash("");
+            setIsCashInModalVisible(true);
+          }}
+        />
+        <QuickAction
           label="Cash Out"
           helper={network.isOffline ? "Offline" : "To GCash/Maya"}
           disabled={network.isOffline}
@@ -1306,15 +1367,17 @@ export default function KahaScreen() {
               onPress={() => {
                 Alert.alert(
                   "Change Wallet?",
-                  "Are you sure you want to change wallet? The current store wallet connection will be disconnected.",
+                  "This will disconnect your current wallet. You can reconnect with any Stellar public key.",
                   [
                     { text: "Cancel", style: "cancel" },
                     {
-                      text: "Change",
+                      text: "Disconnect",
                       style: "destructive",
                       onPress: async () => {
                         setIsWalletModalVisible(false);
+                        await clearWalletConnection();
                         await clearOnboarding();
+                        setWalletConnection(null);
                       }
                     }
                   ]
@@ -1401,6 +1464,133 @@ export default function KahaScreen() {
                 Continue
               </Text>
             </AnimatedPressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── CASH IN MODAL: XLM → USDC → PHPC ─── */}
+      <Modal
+        visible={isCashInModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          if (!cashInIsSubmitting) setIsCashInModalVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 24 }]}>
+
+            {cashInStep === "form" && (
+              <View style={{ gap: 14 }}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>💰 Cash In (XLM → PHPC)</Text>
+                <View style={{ backgroundColor: colors.primaryContainer, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: colors.primary }}>
+                  <Text style={{ fontSize: 12, color: colors.onPrimaryContainer, lineHeight: 18 }}>
+                    🔄 Your XLM is swapped to USDC, then to PHPC — all in one step on the Stellar DEX. Rate: ~56 PHPC per USDC.
+                  </Text>
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>PHPC to Receive (₱)</Text>
+                  <TextInput
+                    id="cashInPhpcAmountInput"
+                    value={cashInPhpcAmount}
+                    onChangeText={setCashInPhpcAmount}
+                    keyboardType="numeric"
+                    placeholder="e.g. 500"
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
+                  />
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>Max XLM to Spend</Text>
+                  <TextInput
+                    id="cashInXlmAmountInput"
+                    value={cashInXlmAmount}
+                    onChangeText={setCashInXlmAmount}
+                    keyboardType="numeric"
+                    placeholder="e.g. 10"
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
+                  />
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                    Available: {Number(xlmBalance).toFixed(4)} XLM. You only spend what's needed — unused XLM stays in your wallet.
+                  </Text>
+                </View>
+
+                {cashInError ? (
+                  <Text style={{ color: colors.error, fontSize: 12, fontWeight: "700" }}>{cashInError}</Text>
+                ) : null}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                  <AnimatedPressable
+                    id="cashInConfirmButton"
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      { flex: 1, backgroundColor: colors.primary, borderRadius: 99 },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={handleCashIn}
+                  >
+                    <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Swap & Cash In</Text>
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      { flex: 1, backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99, marginTop: 0 },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() => setIsCashInModalVisible(false)}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
+                  </AnimatedPressable>
+                </View>
+              </View>
+            )}
+
+            {cashInStep === "broadcasting" && (
+              <View style={{ alignItems: "center", paddingVertical: 20, gap: 14 }}>
+                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Swapping on Stellar DEX...</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>
+                  Converting XLM → USDC → PHPC via path payment...
+                </Text>
+                <Text style={{ fontSize: 40 }}>🔄</Text>
+              </View>
+            )}
+
+            {cashInStep === "success" && (
+              <View style={{ gap: 14, alignItems: "center" }}>
+                <Text style={{ fontSize: 48 }}>🎉</Text>
+                <Text style={[styles.modalTitle, { color: colors.success || colors.primary, textAlign: "center", fontWeight: "900" }]}>Cash In Successful!</Text>
+                <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", lineHeight: 20 }}>
+                  Received <Text style={{ fontWeight: "800", color: colors.primary }}>₱{Number(cashInPhpcAmount).toLocaleString()} PHPC</Text> via{" "}
+                  <Text style={{ fontWeight: "700" }}>XLM → USDC → PHPC</Text> swap.
+                </Text>
+                <View style={{ width: "100%", backgroundColor: colors.cardSecondary, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, gap: 6 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary }}>TX Hash</Text>
+                    <Text style={{ fontSize: 11, color: colors.text, fontFamily: "monospace" }}>
+                      {cashInTxHash ? cashInTxHash.slice(0, 8) + "..." + cashInTxHash.slice(-8) : "—"}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary }}>Swap Route</Text>
+                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: "700" }}>XLM → USDC → PHPC</Text>
+                  </View>
+                </View>
+                <AnimatedPressable
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary, borderRadius: 99, width: "100%", marginTop: 10 },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => setIsCashInModalVisible(false)}
+                >
+                  <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Close</Text>
+                </AnimatedPressable>
+              </View>
+            )}
+
           </View>
         </View>
       </Modal>
