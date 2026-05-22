@@ -7,17 +7,14 @@ function readProjectFile(relativePath) {
 }
 
 describe("tindahan cash formula and conversion rates", () => {
-  it("defines the correct conversion rates in app/index.js and app/scanner.js", () => {
+  it("defines the correct conversion rates in app/index.js", () => {
     const indexSource = readProjectFile("app/index.js");
-    const scannerSource = readProjectFile("app/scanner.js");
 
     // Assert XLM_TO_PHP_RATE is exactly 9.07
     assert.match(indexSource, /const XLM_TO_PHP_RATE = 9.07;/);
-    assert.match(scannerSource, /const XLM_TO_PHP_RATE = 9.07;/);
 
     // Assert USDC_TO_PHP_RATE is exactly 61.45
     assert.match(indexSource, /const USDC_TO_PHP_RATE = 61.45;/);
-    assert.match(scannerSource, /const USDC_TO_PHP_RATE = 61.45;/);
   });
 
   it("calculates Tindahan Cash using the formula: Total Synced Benta + PHPC Balance", () => {

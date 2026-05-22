@@ -16,8 +16,12 @@ if (!SECRET_KEY || !PUBLIC_KEY) {
   process.exit(1);
 }
 
+const network = process.env.EXPO_PUBLIC_STELLAR_NETWORK || 'testnet';
+const isPublic = network === 'public' || network === 'mainnet';
+const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
+
 const deployerKeypair = Keypair.fromSecret(SECRET_KEY);
-const rpcUrl = 'https://soroban-testnet.stellar.org';
+const rpcUrl = process.env.EXPO_PUBLIC_SOROBAN_RPC_URL || (isPublic ? 'https://mainnet.sorobanrpc.com' : 'https://soroban-testnet.stellar.org');
 const server = new Server(rpcUrl);
 
 async function pollTx(hash) {
@@ -41,7 +45,7 @@ async function buildSignAndSubmit(op) {
   
   const tx = new TransactionBuilder(account, {
     fee: '100000', // temporary default fee, prepareTransaction will adjust it
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase,
   })
     .addOperation(op)
     .setTimeout(30)
@@ -96,7 +100,7 @@ async function main() {
     const wasmBuffer = fs.readFileSync(wasmPath);
     console.log(`[SariSync] Loaded WASM binary (${wasmBuffer.length} bytes).`);
 
-    console.log('[SariSync] 2. Uploading WASM bytecode to Stellar Testnet...');
+    console.log(`[SariSync] 2. Uploading WASM bytecode to Stellar ${isPublic ? 'Mainnet' : 'Testnet'}...`);
     const uploadOp = Operation.uploadContractWasm({ wasm: wasmBuffer });
     const uploadResult = await buildSignAndSubmit(uploadOp);
     

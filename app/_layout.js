@@ -17,8 +17,7 @@ function InnerLayout() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Screen name="index" options={{ title: "Kaha" }} />
-        <Stack.Screen name="scanner" options={{ title: "Invoice Scanner" }} />
+        <Stack.Screen name="index" options={{ title: "Kaha", headerShown: false }} />
         <Stack.Screen name="onboarding" options={{ title: "Welcome", headerShown: false }} />
       </Stack>
       <StatusBar style={theme === "light" ? "dark" : "light"} />

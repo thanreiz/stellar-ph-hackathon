@@ -9,6 +9,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -40,13 +41,13 @@ export default function OnboardingScreen() {
       newErrors.monthlyEarnings = "Valid monthly earnings is required.";
     }
     
-    // Validate Stellar Public Key format
+    // Validate the Freighter wallet address without surfacing blockchain jargon.
     const cleanKey = publicKey.trim();
     const stellarPubKeyRegex = /^G[A-Z2-7]{55}$/;
     if (!cleanKey) {
-      newErrors.publicKey = "Your Freighter/Stellar Public Key is required.";
+      newErrors.publicKey = "Your Freighter wallet address is required.";
     } else if (!stellarPubKeyRegex.test(cleanKey)) {
-      newErrors.publicKey = "Invalid Stellar Public Key (Must start with 'G' and be 56 characters long).";
+      newErrors.publicKey = "Enter a valid Freighter wallet address.";
     }
 
     setErrors(newErrors);
@@ -96,7 +97,11 @@ export default function OnboardingScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.emoji, { color: colors.primary }]}>🏪</Text>
+          <Image
+            source={require("../assets/logo.png")}
+            style={styles.logo}
+            resizeMode="contain"
+          />
           <Text style={[styles.title, { color: colors.text }]}>SariSync</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
             Kaha, utang, and proof for your sari-sari store. Your records are secured in the background.
@@ -156,58 +161,7 @@ export default function OnboardingScreen() {
           </View>
         </View>
 
-        {/* Section 2: Choose Store Level & Theme */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Business Snapshot</Text>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Pick a starter profile for your store. This helps SariSync show the right trust level and credit limit.
-          </Text>
-
-          <View style={styles.levelContainer}>
-            {[1, 2, 3, 4, 5].map((lvl) => {
-              const themeInfo = THEMES[lvl];
-              const isSelected = userLevel === lvl;
-              const lvlNames = {
-                1: "Starting store",
-                2: "Growing tindahan",
-                3: "Steady seller",
-                4: "Corner store",
-                5: "High-volume store",
-              };
-              
-              return (
-                <Pressable
-                  key={lvl}
-                  onPress={() => handleLevelSelect(lvl)}
-                  style={[
-                    styles.levelPill,
-                    {
-                      backgroundColor: isSelected ? themeInfo.colors.primary : themeInfo.colors.cardSecondary,
-                      borderColor: themeInfo.colors.border,
-                      borderWidth: 1,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.levelPillText,
-                      {
-                        color: isSelected
-                          ? themeInfo.colors.buttonTextOnPrimary
-                          : themeInfo.colors.text,
-                        fontWeight: isSelected ? "800" : "500",
-                      },
-                    ]}
-                  >
-                    {lvlNames[lvl]}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Section 3: Stellar Wallet Gate */}
+        {/* Section 3: Wallet Gate */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>Connect Wallet</Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>
@@ -263,6 +217,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginVertical: 10,
     gap: 6,
+  },
+  logo: {
+    width: 120,
+    height: 120,
+    marginBottom: 8,
   },
   emoji: {
     fontSize: 48,

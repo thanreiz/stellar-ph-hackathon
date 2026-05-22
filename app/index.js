@@ -15,6 +15,7 @@ import {
   Text,
   TextInput,
   View,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import useNetworkStatus from "../hooks/useNetworkStatus";
@@ -73,7 +74,15 @@ import { generateReceiptDocument } from "../utils/documentGenerator";
 import { formatPhp, formatUsdc } from "../utils/formatters";
 import { useTheme } from "../context/ThemeContext";
 import { useAppContext } from "../context/AppContext";
-import { BentoMetricCard, IconNav, ProofDetailsCard, ProofHint, QuickAction } from "../components/SariSyncUI";
+import {
+  BentoMetricCard,
+  IconNav,
+  ProofDetailsCard,
+  ProofHint,
+  QuickAction,
+  SegmentedControl,
+  StatusBanner,
+} from "../components/SariSyncUI";
 
 // Lender accounts (generated via setupLiquidity + generateLenders scripts)
 const LENDER_OFFERS = [
@@ -97,7 +106,7 @@ const LENDER_OFFERS = [
   },
 ];
 
-const OFFLINE_WARNING = "Offline Mode. Save to phone first.";
+const OFFLINE_WARNING = "Offline mode";
 const DEMO_TRANSACTION_HASH = "0819554161045c5e2ef2a629dbd10396d504f76862739ceebf8452addf6c9489";
 const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
 
@@ -123,6 +132,13 @@ function calculateTindahanCash(totalSyncedBenta, phpcBalance) {
   const benta = Number(totalSyncedBenta || 0);
   const phpc = Number(phpcBalance || 0);
   return Math.max(0, benta + phpc);
+}
+
+function formatStageLabel(stage, stageMeta) {
+  if (stage === CREDIT_STAGES.READ_ONLY) return "Starter";
+  if (stage === CREDIT_STAGES.MICRO_SARI) return "Micro-Sari";
+  if (stage === CREDIT_STAGES.CORNER_STORE) return "Corner Store";
+  return stageMeta?.name || "Starter";
 }
 
 export default function KahaScreen() {
@@ -324,12 +340,12 @@ export default function KahaScreen() {
               if (storeSecretKey) {
                 setIsSyncingOnChain(true);
                 try {
-                  setStatusMessage("Updating out-of-sync Trust Profile on-chain...");
+                  setStatusMessage("Updating your store profile...");
                   const syncResult = await syncProfileToChain(storeSecretKey, localScore, localLimit, localOutstanding);
                   setOnChainScore(syncResult.confirmedScore);
                   setOnChainLimit(syncResult.confirmedLimit);
                   setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
-                  setStatusMessage("Trust Profile successfully synced to blockchain.");
+                  setStatusMessage("Store profile updated successfully.");
                 } catch (sorobanError) {
                   console.error("Soroban profile sync failed:", sorobanError);
                   setStatusMessage(`Failed to sync profile: ${sorobanError.message}`);
@@ -368,7 +384,7 @@ export default function KahaScreen() {
             setStatusMessage("Offline Sales and secure profile synced successfully.");
           } catch (sorobanError) {
             console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
-            setStatusMessage(`Offline Sales synced, but on-chain sync failed: ${sorobanError.message}`);
+            setStatusMessage(`Offline Sales synced, but secure profile update failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
           }
@@ -432,7 +448,7 @@ export default function KahaScreen() {
             checkStageUpgrade(oldTotal, totalSyncedBenta);
           } catch (sorobanError) {
             console.error("Soroban sync failed:", sorobanError);
-            setStatusMessage(`Sales saved, but on-chain sync failed: ${sorobanError.message}`);
+            setStatusMessage(`Sales saved, but secure profile update failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
           }
@@ -473,7 +489,7 @@ export default function KahaScreen() {
       setStatusMessage(controlState.reason);
       return;
     }
-    setStatusMessage(`${label} ready for Stellar Testnet flow.`);
+    setStatusMessage(`${label} is ready.`);
   }
 
   async function handleConnectWallet(publicKey) {
@@ -503,7 +519,7 @@ export default function KahaScreen() {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
           mimeType: "text/html",
-          dialogTitle: "SariSync Ledger Document",
+          dialogTitle: "SariSync Proof Document",
           UTI: "public.html",
         });
         setDocumentStatusMessage("Document ready.");
@@ -649,7 +665,7 @@ export default function KahaScreen() {
     }
 
     setStatusMessage(
-      `Ready to submit ${draftsReadyForSubmission.length} offline Stellar draft(s). Review each draft before broadcasting.`,
+      `Ready to submit ${draftsReadyForSubmission.length} offline payment draft(s). Review each draft before sending.`,
     );
   }
 
@@ -662,11 +678,15 @@ export default function KahaScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.screen, { backgroundColor: colors.background }]}>
+    <ScrollView contentContainerStyle={[styles.screen, { backgroundColor: colors.background, paddingTop: insets.top + 20 }]}>
       {/* 4-E: safe-area-aware offline banner */}
       {network.isOffline ? (
-        <View style={[styles.offlineBanner, { marginTop: insets.top, backgroundColor: colors.errorContainer, borderColor: colors.error }]}>
-          <Text style={[styles.offlineText, { color: colors.error }]}>{OFFLINE_WARNING}</Text>
+        <View>
+          <StatusBanner
+            title={OFFLINE_WARNING}
+            body="Saved on this phone. Online ledger hidden until internet returns."
+            tone="offline"
+          />
           {/* Online ledger hidden until internet returns */}
         </View>
       ) : null}
@@ -675,7 +695,10 @@ export default function KahaScreen() {
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Text style={{ fontSize: 18, color: colors.primary }}>🏪</Text>
-          <Text style={[styles.eyebrow, { color: colors.primary, fontSize: 16, fontWeight: "800", letterSpacing: 0 }]}>SariSync Ledger</Text>
+          <View>
+            <Text style={[styles.eyebrow, { color: colors.primary, fontSize: 13, fontWeight: "800", letterSpacing: 0 }]}>SariSync</Text>
+            <Text style={[styles.topTitle, { color: colors.text }]}>{activeSection}</Text>
+          </View>
         </View>
         <Pressable
           onPress={toggleTheme}
@@ -705,19 +728,31 @@ export default function KahaScreen() {
           ]}
         >
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.text }}>
-            {network.isOffline ? "🔴 SariSync Wallet: Offline" : "🟢 Connected: SariSync Wallet"}
+            {network.isOffline ? "SariSync Wallet: Offline" : "Connected: SariSync Wallet"}
           </Text>
         </Pressable>
       </View>
 
+      {!network.isOffline ? (
+        <StatusBanner
+          title="Online mode"
+          body="Wallet is connected. Payments and proof can sync in the background."
+          tone="online"
+        />
+      ) : null}
+
+      <IconNav items={NAV_ITEMS} activeId={activeSection} onSelect={setActiveSection} />
+
+      {activeSection === "Kaha" ? (
+        <>
       {/* ─── WALLET BALANCE CARD ─── */}
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, borderRadius: 24 }]}>
         <View>
           <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Tindahan Cash (Wallet Balance)
+            Tindahan Cash
           </Text>
           <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
-            {formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
+            {network.isOffline ? "Saved locally" : formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
           </Text>
         </View>
 
@@ -727,23 +762,23 @@ export default function KahaScreen() {
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              Total Synced Sales
+              Benta
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
-              {formatPhp(totalSyncedBenta)}
+              {network.isOffline ? "Hidden offline" : formatPhp(totalSyncedBenta)}
             </Text>
           </View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              PHPC Balance
+              Wallet Cash
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
-              {formatPhp(Number(phpcBalance))}
+              {network.isOffline ? "Hidden offline" : formatPhp(Number(phpcBalance))}
             </Text>
           </View>
           <View style={{ marginTop: 4 }}>
             <Text style={{ fontSize: 11, color: colors.textSecondary, fontStyle: "italic", lineHeight: 15 }}>
-              * You can only cash out the PHPC balance. Withdrawals are processed on-chain via the anchor and reflect on stellar.expert.
+              * You can only cash out the wallet cash shown here. Proof details are available when you need them.
             </Text>
           </View>
         </View>
@@ -770,8 +805,8 @@ export default function KahaScreen() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
             {stage === CREDIT_STAGES.CORNER_STORE
-              ? "Trust Score & Limits: Max Stage"
-              : `Trust Score & Limits: ${stageMeta.name}`}
+              ? "Tiwala Score at Limit: Max Stage"
+              : `Tiwala Score at Limit: ${formatStageLabel(stage, stageMeta)}`}
           </Text>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.primary }}>
             {stage === CREDIT_STAGES.READ_ONLY
@@ -809,10 +844,21 @@ export default function KahaScreen() {
 
       <View style={styles.quickActionRow}>
         <QuickAction
-          label="Record"
-          helper="Benta / Gastos"
+          label="Record Benta"
+          helper="Cash in"
           onPress={() => {
             setStatusMessage("");
+            setActiveRecordTab("benta");
+            setIsRecordModalVisible(true);
+          }}
+        />
+        <QuickAction
+          label="Record Gastos"
+          helper="Cash / banks"
+          tone="expense"
+          onPress={() => {
+            setStatusMessage("");
+            setActiveRecordTab("gastos");
             setIsRecordModalVisible(true);
           }}
         />
@@ -830,12 +876,7 @@ export default function KahaScreen() {
             setIsCashOutModalVisible(true);
           }}
         />
-        <QuickAction
-          label="Pay Supplier"
-          helper={stage === CREDIT_STAGES.READ_ONLY ? "Locked" : "Invoice"}
-          disabled={stage === CREDIT_STAGES.READ_ONLY}
-          onPress={() => router.push("/scanner")}
-        />
+
       </View>
 
       {network.isOffline ? (
@@ -848,10 +889,8 @@ export default function KahaScreen() {
         />
       ) : null}
 
-      <IconNav items={NAV_ITEMS} activeId={activeSection} onSelect={setActiveSection} />
-
-      {activeSection === "Kaha" ? (
         <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} onChainScore={onChainScore} onChainLimit={onChainLimit} isOffline={network.isOffline} />
+        </>
       ) : null}
       {activeSection === "Tracker" ? (
         <TrackerPanel
@@ -874,6 +913,8 @@ export default function KahaScreen() {
           onRepayLoan={handleRepayLoan}
           statusMessage={statusMessage}
           outstandingBalance={displayOutstandingBalance}
+          loanLimit={displayLimit}
+          offlineDrafts={offlineDrafts}
         />
       ) : null}
       {activeSection === "Proof" ? (
@@ -898,52 +939,26 @@ export default function KahaScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
-            <Text style={[styles.modalTitle, { color: colors.text, marginBottom: 16 }]}>Record</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>
+              {activeRecordTab === "benta" ? "Record Benta" : "Record Gastos"}
+            </Text>
+            <Text style={[styles.bodyText, { color: colors.textSecondary, marginBottom: 14 }]}>
+              What happened?
+            </Text>
 
             {/* Tab Selector */}
-            <View style={[styles.rangeRow, { marginBottom: 16 }]}>
-              <Pressable
-                onPress={() => {
-                  setActiveRecordTab("benta");
+            <View style={{ marginBottom: 16 }}>
+              <SegmentedControl
+                value={activeRecordTab}
+                onChange={(nextTab) => {
+                  setActiveRecordTab(nextTab);
                   setStatusMessage("");
                 }}
-                style={[
-                  styles.rangeButton,
-                  { borderColor: colors.border, flex: 1, alignItems: "center" },
-                  activeRecordTab === "benta" && { backgroundColor: colors.primary, borderColor: colors.primary }
+                options={[
+                  { id: "benta", label: "Benta" },
+                  { id: "gastos", label: "Gastos" },
                 ]}
-              >
-                <Text
-                  style={[
-                    styles.rangeButtonText,
-                    { color: colors.text },
-                    activeRecordTab === "benta" && { color: theme === "light" ? "#FFFFFF" : "#111411" }
-                  ]}
-                >
-                  Benta
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  setActiveRecordTab("gastos");
-                  setStatusMessage("");
-                }}
-                style={[
-                  styles.rangeButton,
-                  { borderColor: colors.border, flex: 1, alignItems: "center" },
-                  activeRecordTab === "gastos" && { backgroundColor: colors.primary, borderColor: colors.primary }
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.rangeButtonText,
-                    { color: colors.text },
-                    activeRecordTab === "gastos" && { color: theme === "light" ? "#FFFFFF" : "#111411" }
-                  ]}
-                >
-                  Gastos
-                </Text>
-              </Pressable>
+              />
             </View>
 
             {/* Form Fields based on Active Tab */}
@@ -1062,7 +1077,7 @@ export default function KahaScreen() {
               </View>
 
               <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
-                This wallet address serves as your store's digital ID to securely verify your Trust Score and receipts.
+                This wallet address serves as your store ID for secure payments, Tiwala Score, and receipts.
               </Text>
             </View>
 
@@ -1125,10 +1140,10 @@ export default function KahaScreen() {
           ]}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={{ fontSize: 20, fontWeight: "800", color: colors.primary, textAlign: "center" }}>
-              🔗 Soroban Network
+              Secure Sync
             </Text>
             <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", fontWeight: "700" }}>
-              Syncing your Trust Score and Credit Limit on the blockchain...
+              Syncing your Tiwala Score and loan limit...
             </Text>
             <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: "center", lineHeight: 18 }}>
               {statusMessage || "Waiting for transaction to confirm. Just a moment."}
@@ -1144,7 +1159,7 @@ export default function KahaScreen() {
               borderColor: colors.border,
             }}>
               <Text style={{ fontSize: 11, color: colors.textSecondary, fontFamily: "monospace", textAlign: "center" }}>
-                Stellar Testnet · Soroban RPC · Poll ✓2s
+                Secured profile update · Checking every 2s
               </Text>
             </View>
           </View>
@@ -1203,7 +1218,7 @@ export default function KahaScreen() {
               <View style={{ gap: 14 }}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Cash Out (Off-Ramp)</Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                  You can only cash out your PHPC balance. The withdrawal will be executed on the Stellar blockchain via the anchor and will reflect on stellar.expert.
+                  You can only cash out your wallet cash. Proof details will be available after the withdrawal is processed.
                 </Text>
 
                 <View style={{ gap: 6 }}>
@@ -1444,9 +1459,9 @@ export default function KahaScreen() {
 
             {cashOutStep === "broadcasting" && (
               <View style={{ alignItems: "center", paddingVertical: 20, gap: 14 }}>
-                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Broadcasting Transaction...</Text>
+                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Processing Withdrawal...</Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>
-                  Writing to Stellar Testnet ledger via GoTyme SEP-24 gateway...
+                  Sending your cash-out request securely...
                 </Text>
                 <View style={{ marginVertical: 10 }}>
                   <Text style={{ fontSize: 40 }}>📡</Text>
@@ -1528,13 +1543,15 @@ function LoadingScreen() {
 
   return (
     <View style={[styles.loadingScreen, { backgroundColor: colors.background }]}>
-      {/* App Icon placeholder */}
-      <View style={[styles.loadingIconBox, { backgroundColor: colors.primary }]}>
-        <Text style={{ fontSize: 40, color: "#FFFFFF" }}>🏪</Text>
-      </View>
+      {/* App Icon */}
+      <Image
+        source={require("../assets/logo.png")}
+        style={styles.loadingLogo}
+        resizeMode="contain"
+      />
 
       {/* Brand */}
-      <Text style={[styles.loadingTitle, { color: colors.text }]}>SariSync Ledger</Text>
+      <Text style={[styles.loadingTitle, { color: colors.text }]}>SariSync</Text>
       <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary, letterSpacing: 2, textTransform: "uppercase", marginBottom: 32 }}>Your Store Partner</Text>
 
       {/* Rotating message */}
@@ -1565,7 +1582,7 @@ function WalletConnectionGate({ onConnect }) {
     setErrorMessage("");
 
     if (!isValidStellarPublicKey(publicKeyToConnect)) {
-      setErrorMessage("Connect a valid Stellar Testnet G... public key.");
+      setErrorMessage("Paste a valid Freighter wallet address.");
       return;
     }
 
@@ -1585,7 +1602,7 @@ function WalletConnectionGate({ onConnect }) {
       <View style={[styles.walletHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24, width: "100%" }]}>
         <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Text style={{ fontSize: 24, color: colors.primary }}>🔑</Text>
-          <Text style={[styles.title, { color: colors.primary, fontSize: 22, fontWeight: "800", marginBottom: 0 }]}>SariSync Ledger</Text>
+          <Text style={[styles.title, { color: colors.primary, fontSize: 22, fontWeight: "800", marginBottom: 0 }]}>SariSync</Text>
         </View>
         <Pressable
           onPress={toggleTheme}
@@ -1618,13 +1635,13 @@ function WalletConnectionGate({ onConnect }) {
         <View style={{ gap: 16 }}>
           {/* Input Section */}
           <View style={{ gap: 6 }}>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700", marginLeft: 4 }}>Stellar Public Key</Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700", marginLeft: 4 }}>Wallet Address</Text>
             <TextInput
               value={publicKey}
               onChangeText={setPublicKey}
               autoCapitalize="characters"
               autoCorrect={false}
-              placeholder="Paste Stellar G... public key"
+              placeholder="Paste Freighter wallet address"
               placeholderTextColor={colors.textSecondary}
               style={[
                 styles.input,
@@ -1744,10 +1761,10 @@ function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit, onChainScore, 
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Profile</Text>
       <Text style={[styles.stageName, { color: colors.text }]}>Store Settings</Text>
       <InfoRow label="Store type" value="Sari-sari inventory business" />
-      <InfoRow label="Stage" value={stageMeta.name} />
-      <InfoRow label="Trust Score" value={`${displayScore}`} />
+      <InfoRow label="Stage" value={formatStageLabel(stage, stageMeta)} />
+      <InfoRow label="Tiwala Score" value={`${displayScore}`} />
       <InfoRow label="Loan limit" value={formatPhp(displayLimit)} />
-      <InfoRow label="Blockchain Security" value={isOffline ? "Offline Mode (Local)" : "Secured & Verified (Stellar)"} />
+      <InfoRow label="Security" value={isOffline ? "Offline Mode (Local)" : "Secured & Verified"} />
     </View>
   );
 }
@@ -1772,12 +1789,12 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Tracker</Text>
-      <Text style={[styles.stageName, { color: colors.text }]}>Capital movement</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Araw-araw na galaw ng tindahan</Text>
       <View style={styles.metricsGrid}>
         <MiniMetric label="Gastos" value={formatPhp(snapshot.spent)} color={colors.expense} />
-        <MiniMetric label="Kita" value={formatPhp(snapshot.earned)} color={colors.primary} />
-        <MiniMetric label="Capital" value={formatPhp(snapshot.capital + loanCapital)} color={colors.tertiary} />
-        <MiniMetric label="Active Utang" value={formatPhp(loanCapital)} color={colors.error} />
+        <MiniMetric label="Benta" value={formatPhp(snapshot.earned)} color={colors.primary} />
+        <MiniMetric label="Puhunan" value={formatPhp(snapshot.capital + loanCapital)} color={colors.tertiary} />
+        <MiniMetric label="Utang" value={formatPhp(loanCapital)} color={colors.error} />
       </View>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
@@ -1788,64 +1805,55 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
             Record ₱5,000 in sales to unlock credit and financing.
           </Text>
         </View>
-      ) : (
+      ) : null}
+
+      <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Loan Offers</Text>
+      <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Partner lenders can fund store inventory when your credit limit is available.</Text>
+      {LENDER_OFFERS.map(offer => {
+        const isTooHigh = offer.amountPhpc > availableLimit;
+        const buttonDisabled = isRequesting || !controlState.canTransact || isTooHigh || isReadOnly;
+
+        return (
+          <View key={offer.id} style={[styles.lenderCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.lenderName, { color: colors.text }]}>{offer.name}</Text>
+              <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{offer.description}</Text>
+              <Text style={[styles.bodyText, { color: colors.textSecondary, fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
+            </View>
+            <Pressable
+              disabled={buttonDisabled}
+              onPress={() => setSelectedOffer(offer)}
+              style={({ pressed }) => [
+                styles.loanButton,
+                { backgroundColor: buttonDisabled ? colors.border : colors.primary },
+                pressed && !buttonDisabled && styles.pressed,
+                buttonDisabled && styles.disabled,
+              ]}
+            >
+              <Text style={[styles.loanButtonText, { color: buttonDisabled ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
+                {!controlState.canTransact ? "Offline" : isReadOnly ? "Locked" : isTooHigh ? "Too High" : "Humingi"}
+              </Text>
+            </Pressable>
+          </View>
+        );
+      })}
+
+      {activeLoans.length > 0 && (
         <>
-          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Loan Offers</Text>
-          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>Partner lenders can fund store inventory when your credit limit is available.</Text>
-          {LENDER_OFFERS.map(offer => {
-            const isTooHigh = offer.amountPhpc > availableLimit;
-            const buttonDisabled = isRequesting || !controlState.canTransact || isTooHigh;
-
-            return (
-              <View key={offer.id} style={[styles.lenderCard, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.lenderName, { color: colors.text }]}>{offer.name}</Text>
-                  <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{offer.description}</Text>
-                  <Text style={[styles.bodyText, { color: colors.textSecondary, fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
-                </View>
-                <Pressable
-                  disabled={buttonDisabled || !controlState.canTransact}
-                  onPress={() => setSelectedOffer(offer)}
-                  style={({ pressed }) => [
-                    styles.loanButton,
-                    { backgroundColor: isTooHigh || !controlState.canTransact ? colors.border : colors.primary },
-                    pressed && !buttonDisabled && controlState.canTransact && styles.pressed,
-                    (buttonDisabled || !controlState.canTransact) && styles.disabled,
-                  ]}
-                >
-                  <Text style={[styles.loanButtonText, { color: isTooHigh || !controlState.canTransact ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
-                    {!controlState.canTransact ? "Offline" : isTooHigh ? "Too High" : "Humingi"}
-                  </Text>
-                </Pressable>
-              </View>
-            );
-          })}
-
-          {activeLoans.length > 0 && (
-            <>
-              <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Active Loans</Text>
-              {activeLoans.map(loan => (
-                <InfoRow
-                  key={loan.id}
-                  label={loan.lenderName}
-                  value={formatPhp(loan.amountPhpDisplay)}
-                />
-              ))}
-            </>
-          )}
-
-          <Pressable
-            onPress={onOpenScanner}
-            style={({ pressed }) => [
-              styles.secondaryButton,
-              { backgroundColor: colors.cardSecondary, borderColor: colors.border, marginTop: 12 },
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Scan Supplier Invoice</Text>
-          </Pressable>
+          <Text style={[styles.cardLabel, { marginTop: 16, marginBottom: 8, color: colors.textSecondary }]}>Active Loans</Text>
+          {activeLoans.map(loan => (
+            <InfoRow
+              key={loan.id}
+              label={loan.lenderName}
+              value={formatPhp(loan.amountPhpDisplay)}
+            />
+          ))}
         </>
       )}
+
+      <View style={{ marginTop: 12 }}>
+        <ProofHint />
+      </View>
 
       {/* Loan confirmation modal */}
       <Modal visible={!!selectedOffer} transparent animationType="fade">
@@ -1891,7 +1899,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
   );
 }
 
-function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandingBalance }) {
+function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandingBalance, loanLimit = 0, offlineDrafts = [] }) {
   const { theme, colors } = useTheme();
   const [confirmLoan, setConfirmLoan] = useState(null);
   const [isRepaying, setIsRepaying] = useState(false);
@@ -1902,6 +1910,9 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
 
   const activeLoans = loans.filter(l => l.status === "active");
   const paidLoans = loans.filter(l => l.status === "paid");
+  const repaymentDrafts = offlineDrafts.filter(
+    (draft) => draft.type === OFFLINE_DRAFT_TYPES.LOAN_REPAYMENT && draft.status === "pending_online_submission",
+  );
 
   async function handleRepay(loan) {
     setIsRepaying(true);
@@ -1922,24 +1933,23 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Utang</Text>
-      <Text style={[styles.stageName, { color: colors.text }]}>Loan repayment</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Manage loans and bayad</Text>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
 
-      {/* Prominent Outstanding Balance Banner */}
-      <View style={{ backgroundColor: colors.cardSecondary, padding: 16, borderRadius: 10, borderWidth: 1, borderColor: colors.border, marginVertical: 8 }}>
-        <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-          Total Utang Balance
-        </Text>
-        <Text style={{ fontSize: 26, fontWeight: "900", color: colors.error, marginTop: 4 }}>
-          {formatPhp(outstandingBalance)}
-        </Text>
+      <View style={styles.metricsGrid}>
+        <MiniMetric label="Active Utang" value={formatPhp(outstandingBalance)} color={colors.error} />
+        <MiniMetric label="Loan Limit" value={formatPhp(loanLimit)} color={colors.primary} />
+        <MiniMetric label="Draft Bayad" value={String(repaymentDrafts.length)} color={colors.expense} />
+        <MiniMetric label="Paid Loans" value={String(paidLoans.length)} color={colors.success} />
       </View>
 
       {/* Active debts */}
       <Text style={[styles.cardLabel, { marginTop: 8, marginBottom: 8, color: colors.textSecondary }]}>Active loans</Text>
       {activeLoans.length === 0 ? (
-        <Text style={[styles.bodyText, { color: colors.textSecondary }]}>No active loans yet. Request a loan in Tracker when your limit is available.</Text>
+        <View style={[styles.readOnlyBanner, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+          <Text style={[styles.readOnlyText, { color: colors.textSecondary }]}>No active loans</Text>
+        </View>
       ) : (
         activeLoans.map(loan => (
           <View key={loan.id} style={[styles.debtRow, { borderColor: colors.border }]}>
@@ -1967,6 +1977,15 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
           </View>
         ))
       )}
+
+      {repaymentDrafts.length > 0 ? (
+        <View style={[styles.readOnlyBanner, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
+          <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Pending local work</Text>
+          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
+            {repaymentDrafts.length} Bayad draft saved on this phone.
+          </Text>
+        </View>
+      ) : null}
 
       {/* Paid debts */}
       {paidLoans.length > 0 && (
@@ -2100,11 +2119,13 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
       <Text style={[styles.stageName, { color: colors.text }]}>Receipts and records</Text>
 
       <View style={styles.metricsGrid}>
-        <MiniMetric label="Settlements" value={String(receipts.length)} />
-        <MiniMetric label="Total USDC" value={totalUsdc.toFixed(2)} color={colors.primary} />
+        <MiniMetric label="Records" value={String(receipts.length + loans.length)} />
+        <MiniMetric label="Receipts" value={String(receipts.length)} color={colors.primary} />
         <MiniMetric label="Loans" value={String(loans.length)} />
         <MiniMetric label="Loaned" value={formatPhp(totalLoaned)} color={colors.tertiary} />
       </View>
+
+      <ProofHint />
 
       {receipts.length > 0 || loans.length > 0 ? (
         <>
@@ -2239,6 +2260,11 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+    marginBottom: 20,
+  },
+  loadingLogo: {
+    width: 140,
+    height: 140,
     marginBottom: 20,
   },
   loadingTitle: {

@@ -92,14 +92,13 @@ describe("mobile demo configuration", () => {
 
   it("shows offline drafts separately from submitted Stellar transactions", () => {
     const source = readProjectFile("app/index.js");
-    const scanner = readProjectFile("app/scanner.js");
 
     assert.match(source, /Offline Work/);
     assert.match(source, /pending_online_submission/);
     assert.match(source, /Submit when online/);
     assert.match(source, /Draft supplier invoices/);
     assert.match(source, /Draft loan repayments/);
-    assert.match(scanner, /appendOfflineDraft/);
+    assert.match(source, /appendOfflineDraft/);
   });
 
   it("tracks expenses with approved Filipino-friendly payment sources", () => {
@@ -168,7 +167,6 @@ describe("mobile demo configuration", () => {
     const onboarding = readProjectFile("app/onboarding.js");
 
     assertIncludes(onboarding, "Store Profile");
-    assertIncludes(onboarding, "Business Snapshot");
     assertIncludes(onboarding, "Connect Wallet");
     assertIncludes(onboarding, "records are secured in the background");
     assertIncludes(onboarding, "Freighter");
@@ -207,14 +205,6 @@ describe("mobile demo configuration", () => {
     assertExcludes(source, "Create Document");
   });
 
-  it("keeps supplier scanner copy aligned with Choice A finance language", () => {
-    const scanner = readProjectFile("app/scanner.js");
-
-    assertIncludes(scanner, "Pay Supplier");
-    assertIncludes(scanner, "Tindahan Cash");
-    assertIncludes(scanner, "financing");
-    assertExcludes(scanner, "Magbayad ng Supply");
-  });
 
   it("uses friendly wallet connection copy while removing technical validation prompts", () => {
     const source = readProjectFile("app/index.js");
@@ -228,5 +218,26 @@ describe("mobile demo configuration", () => {
     );
     assertExcludes(source, "I-Validate ang Stellar Invoice");
     assertExcludes(source, "I-paste ang transaction hash para i-verify sa Horizon Testnet");
+  });
+
+  it("uses Stitch Choice A section subtitles and offline banner copy", () => {
+    const source = readProjectFile("app/index.js");
+
+    assertIncludes(source, "Araw-araw na galaw ng tindahan");
+    assertIncludes(source, "Manage loans and bayad");
+    assertIncludes(source, "Receipts and records");
+    assertIncludes(source, "Saved on this phone");
+    assertIncludes(source, "Online mode");
+    assertIncludes(source, "Offline mode");
+  });
+
+  it("uses the approved Stitch record modal controls", () => {
+    const source = readProjectFile("app/index.js");
+
+    assertIncludes(source, "Record Benta");
+    assertIncludes(source, "Record Gastos");
+    assertIncludes(source, "What happened?");
+    assertIncludes(source, "Save Benta");
+    assertIncludes(source, "Save Gastos");
   });
 });

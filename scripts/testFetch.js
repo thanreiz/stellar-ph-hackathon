@@ -1,10 +1,14 @@
+import 'dotenv/config';
 import { rpc, Contract, nativeToScVal, scValToNative, TransactionBuilder, Networks } from '@stellar/stellar-sdk';
 const { Server } = rpc;
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+const network = process.env.EXPO_PUBLIC_STELLAR_NETWORK || 'testnet';
+const isPublic = network === 'public' || network === 'mainnet';
+const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
+
+const RPC_URL = process.env.EXPO_PUBLIC_SOROBAN_RPC_URL || (isPublic ? 'https://mainnet.sorobanrpc.com' : 'https://soroban-testnet.stellar.org');
 const server = new Server(RPC_URL);
 
-import 'dotenv/config';
 const contractId = process.env.EXPO_PUBLIC_SOROBAN_CONTRACT_ID;
 const storePublicKey = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY;
 
@@ -22,7 +26,7 @@ async function testFetch() {
 
     const tx = new TransactionBuilder(dummyAccount, {
       fee: '100',
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase,
     })
       .addOperation(
         contract.call('get_profile', nativeToScVal(storePublicKey, { type: 'address' }))
