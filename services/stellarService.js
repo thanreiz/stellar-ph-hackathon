@@ -26,9 +26,11 @@ const HORIZON_TRANSACTION_MAX_TIME_SECONDS = 300;
 const MAX_SUBMISSION_ATTEMPTS = 2;
 
 function horizonTimeout() {
+  const config = getStellarConfig();
+  const isPublic = config.network === "public" || config.network === "mainnet";
   return new Promise((_, reject) =>
     setTimeout(
-      () => reject(new Error('[SariSync] Horizon Testnet did not respond within 20s. Try again.')),
+      () => reject(new Error(`[SariSync] Horizon ${isPublic ? 'Mainnet' : 'Testnet'} did not respond within 20s. Try again.`)),
       HORIZON_TIMEOUT_MS
     )
   );
@@ -49,8 +51,8 @@ function getStellarConfig() {
 }
 
 function validateConfig(config) {
-  if (config.network !== "testnet") {
-    throw new Error("SariSync Ledger only supports Stellar TESTNET.");
+  if (config.network !== "testnet" && config.network !== "public" && config.network !== "mainnet") {
+    throw new Error("SariSync Ledger only supports Stellar TESTNET or MAINNET/PUBLIC.");
   }
 
   if (!config.storeSecretKey) {
@@ -162,9 +164,11 @@ export async function submitInventoryFinancingSettlement({
         );
       }
 
+      const isPublic = config.network === "public" || config.network === "mainnet";
+      const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
       const transaction = new TransactionBuilder(sourceAccount, {
         fee: BASE_FEE,
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase,
       })
         .addOperation(
           Operation.pathPaymentStrictReceive({
@@ -217,9 +221,11 @@ export async function receiveLoanFromLender({ lenderSecretKey, amountPhpc, borro
 
     const response = await submitWithFreshTransaction(server, async () => {
       const lenderAccount = await server.loadAccount(lenderKeypair.publicKey());
+      const isPublic = config.network === "public" || config.network === "mainnet";
+      const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
       const transaction = new TransactionBuilder(lenderAccount, {
         fee: BASE_FEE,
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase,
       })
         .addOperation(
           Operation.payment({
@@ -257,9 +263,11 @@ export async function repayLoan({ lenderPublicKey, amountPhpc, memo = 'SariSync 
 
     const response = await submitWithFreshTransaction(server, async () => {
       const storeAccount = await server.loadAccount(config.storePublicKey);
+      const isPublic = config.network === "public" || config.network === "mainnet";
+      const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
       const transaction = new TransactionBuilder(storeAccount, {
         fee: BASE_FEE,
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase,
       })
         .addOperation(
           Operation.payment({
@@ -305,7 +313,9 @@ export async function validateStellarTransaction(txHash) {
       successful: tx.successful,
     };
   } catch (error) {
-    return { success: false, error: 'Transaction not found on Horizon Testnet.' };
+    const config = getStellarConfig();
+    const isPublic = config.network === "public" || config.network === "mainnet";
+    return { success: false, error: `Transaction not found on Horizon ${isPublic ? 'Mainnet' : 'Testnet'}.` };
   }
 }
 
@@ -425,9 +435,11 @@ export async function cashOutPHPC({ amountPhpc, memo = 'SariSync Cashout' }) {
 
     const response = await submitWithFreshTransaction(server, async () => {
       const storeAccount = await server.loadAccount(config.storePublicKey);
+      const isPublic = config.network === "public" || config.network === "mainnet";
+      const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
       const transaction = new TransactionBuilder(storeAccount, {
         fee: BASE_FEE,
-        networkPassphrase: Networks.TESTNET,
+        networkPassphrase,
       })
         .addOperation(
           Operation.payment({

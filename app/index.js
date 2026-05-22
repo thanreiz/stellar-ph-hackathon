@@ -876,12 +876,7 @@ export default function KahaScreen() {
             setIsCashOutModalVisible(true);
           }}
         />
-        <QuickAction
-          label="Pay Supplier"
-          helper={stage === CREDIT_STAGES.READ_ONLY ? "Locked" : "Invoice"}
-          disabled={stage === CREDIT_STAGES.READ_ONLY}
-          onPress={() => router.push("/scanner")}
-        />
+
       </View>
 
       {network.isOffline ? (
@@ -1856,16 +1851,6 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
         </>
       )}
 
-      <Pressable
-        onPress={onOpenScanner}
-        style={({ pressed }) => [
-          styles.secondaryButton,
-          { backgroundColor: colors.cardSecondary, borderColor: colors.border, marginTop: 12 },
-          pressed && styles.pressed,
-        ]}
-      >
-        <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Scan Supplier Invoice</Text>
-      </Pressable>
       <View style={{ marginTop: 12 }}>
         <ProofHint />
       </View>

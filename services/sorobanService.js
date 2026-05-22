@@ -1,8 +1,11 @@
 import { rpc, Keypair, Address, Contract, nativeToScVal, scValToNative, TransactionBuilder, Networks } from '@stellar/stellar-sdk';
 const { Server } = rpc;
 
-const RPC_URL = 'https://soroban-testnet.stellar.org';
+const isPublic = process.env.EXPO_PUBLIC_STELLAR_NETWORK === 'public' || process.env.EXPO_PUBLIC_STELLAR_NETWORK === 'mainnet';
+const RPC_URL = process.env.EXPO_PUBLIC_SOROBAN_RPC_URL || (isPublic ? 'https://mainnet.sorobanrpc.com' : 'https://soroban-testnet.stellar.org');
 const server = new Server(RPC_URL);
+const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
+
 
 /**
  * Fetch the store's on-chain Tiwala Score and Loan Limit from the Soroban smart contract.
@@ -27,7 +30,7 @@ export async function fetchOnChainProfile(storePublicKey) {
 
     const tx = new TransactionBuilder(dummyAccount, {
       fee: '100',
-      networkPassphrase: Networks.TESTNET,
+      networkPassphrase,
     })
       .addOperation(
         contract.call('get_profile', nativeToScVal(storePublicKey, { type: 'address' }))
@@ -103,7 +106,7 @@ export async function syncProfileToChain(storeSecretKey, score, limit, outstandi
   // 3. Build base transaction
   const tx = new TransactionBuilder(account, {
     fee: '100000',
-    networkPassphrase: Networks.TESTNET,
+    networkPassphrase,
   })
     .addOperation(op)
     .setTimeout(30)

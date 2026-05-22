@@ -18,7 +18,7 @@ export function createOfflineDraft(input) {
     supplierPubkey: input.supplierPubkey || null,
     lenderName: input.lenderName || null,
     loanId: input.loanId || null,
-    network: "STELLAR_TESTNET",
+    network: process.env.EXPO_PUBLIC_STELLAR_NETWORK === "public" || process.env.EXPO_PUBLIC_STELLAR_NETWORK === "mainnet" ? "STELLAR_MAINNET" : "STELLAR_TESTNET",
     status: OFFLINE_DRAFT_STATUS.PENDING,
     submittedTxHash: null,
     createdAt: new Date().toISOString(),
@@ -27,12 +27,13 @@ export function createOfflineDraft(input) {
 
 export function getOfflineCapabilities({ isOffline }) {
   if (!isOffline) {
+    const isPublic = process.env.EXPO_PUBLIC_STELLAR_NETWORK === "public" || process.env.EXPO_PUBLIC_STELLAR_NETWORK === "mainnet";
     return {
       canLogBenta: true,
       canDraftRepayment: true,
       canDraftSupplierInvoice: true,
       canSubmitStellarTransaction: true,
-      message: "Online mode: Stellar Testnet transactions can be submitted.",
+      message: `Online mode: Stellar ${isPublic ? 'Mainnet' : 'Testnet'} transactions can be submitted.`,
     };
   }
 

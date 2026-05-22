@@ -92,14 +92,13 @@ describe("mobile demo configuration", () => {
 
   it("shows offline drafts separately from submitted Stellar transactions", () => {
     const source = readProjectFile("app/index.js");
-    const scanner = readProjectFile("app/scanner.js");
 
     assert.match(source, /Offline Work/);
     assert.match(source, /pending_online_submission/);
     assert.match(source, /Submit when online/);
     assert.match(source, /Draft supplier invoices/);
     assert.match(source, /Draft loan repayments/);
-    assert.match(scanner, /appendOfflineDraft/);
+    assert.match(source, /appendOfflineDraft/);
   });
 
   it("tracks expenses with approved Filipino-friendly payment sources", () => {
@@ -207,14 +206,6 @@ describe("mobile demo configuration", () => {
     assertExcludes(source, "Create Document");
   });
 
-  it("keeps supplier scanner copy aligned with Choice A finance language", () => {
-    const scanner = readProjectFile("app/scanner.js");
-
-    assertIncludes(scanner, "Pay Supplier");
-    assertIncludes(scanner, "Tindahan Cash");
-    assertIncludes(scanner, "financing");
-    assertExcludes(scanner, "Magbayad ng Supply");
-  });
 
   it("uses friendly wallet connection copy while removing technical validation prompts", () => {
     const source = readProjectFile("app/index.js");
