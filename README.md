@@ -81,11 +81,11 @@ SariSync helps a sari-sari store owner:
 | --- | --- |
 | <img src="assets/readme/offline-mode.png" width="260" alt="Offline mode" /> | <img src="assets/readme/wallet-connection.png" width="260" alt="Wallet connection" /> |
 
-### Stellar Explorer Proof
+### Stellar Explorer Transaction Proof
 
 | Mainnet | Testnet |
 | --- | --- |
-| <img src="assets/readme/mainnet-stellar-expert.png" width="420" alt="Mainnet Stellar Expert proof" /> | <img src="assets/readme/testnet-stellar-expert.png" width="420" alt="Testnet Stellar Expert proof" /> |
+| <img src="assets/readme/mainnet-stellar-expert.png" width="420" alt="Mainnet Stellar Expert transaction history proof" /> | <img src="assets/readme/testnet-stellar-expert.png" width="420" alt="Testnet Stellar Expert transaction history proof" /> |
 
 ---
 
