@@ -1010,31 +1010,7 @@ export default function KahaScreen() {
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
-                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Pinambayad</Text>
-                <View style={[styles.rangeRow, { flexWrap: "wrap", gap: 6 }]}>
-                  {EXPENSE_PAYMENT_SOURCES.map((source) => (
-                    <Pressable
-                      key={source.id}
-                      accessibilityRole="button"
-                      onPress={() => setBentaSource(source.id)}
-                      style={[
-                        styles.rangeButton,
-                        { borderColor: colors.border, minWidth: "45%", alignItems: "center" },
-                        bentaSource === source.id && { backgroundColor: colors.primary, borderColor: colors.primary },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.rangeButtonText,
-                          { color: colors.text },
-                          bentaSource === source.id && { color: theme === "light" ? "#FFFFFF" : "#111411" },
-                        ]}
-                      >
-                        {source.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
+
                 <Pressable
                   accessibilityRole="button"
                   disabled={isSavingBenta}
