@@ -635,7 +635,7 @@ export default function ScannerScreen() {
               <Text style={{ fontSize: 32, textAlign: "center", marginBottom: 12 }}>💸</Text>
               <Text style={[styles.errorTitle, { color: colors.primary, textAlign: "center" }]}>Shortfall of {formatPhp(shortfallPhp)}</Text>
               <Text style={[styles.errorBody, { color: colors.textSecondary, marginTop: 8 }]}>
-                Your Tindahan Cash is not enough to pay for this supply. Do you want to borrow the shortfall of {formatPhp(shortfallPhp)} from Kaagapay Microfinance?
+                Your Tindahan Cash is not enough for this supplier payment. You can request financing for the shortfall of {formatPhp(shortfallPhp)} from Kaagapay Microfinance.
               </Text>
               
               <View style={{ width: "100%", gap: 10, marginTop: 20 }}>
