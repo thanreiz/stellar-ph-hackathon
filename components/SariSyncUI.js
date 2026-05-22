@@ -1,7 +1,56 @@
-import React from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useRef } from "react";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useTheme } from "../context/ThemeContext";
+
+const AnimatedPressableComponent = Animated.createAnimatedComponent(Pressable);
+
+export function AnimatedPressable({ children, onPress, style, disabled, ...props }) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: 0.95,
+      useNativeDriver: true,
+      tension: 180,
+      friction: 6,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    if (disabled) return;
+    Animated.spring(scale, {
+      toValue: 1,
+      useNativeDriver: true,
+      tension: 180,
+      friction: 6,
+    }).start();
+  };
+
+  return (
+    <AnimatedPressableComponent
+      disabled={disabled}
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={(state) => {
+        const resolvedStyle = typeof style === "function" ? style(state) : style;
+        const flattened = StyleSheet.flatten(resolvedStyle) || {};
+        const existingTransforms = flattened.transform || [];
+        return [
+          resolvedStyle,
+          {
+            transform: [...existingTransforms, { scale }],
+          },
+        ];
+      }}
+      {...props}
+    >
+      {children}
+    </AnimatedPressableComponent>
+  );
+}
 
 const ICONS = {
   wallet: "▣",
@@ -97,7 +146,7 @@ function PillButton({ label, onPress, variant = "primary", disabled = false, sty
   const isQuiet = variant === "quiet";
 
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -130,7 +179,7 @@ function PillButton({ label, onPress, variant = "primary", disabled = false, sty
       >
         {label}
       </Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -162,7 +211,7 @@ function IconNav({ items, activeId, onSelect }) {
         const active = item.id === activeId;
 
         return (
-          <Pressable
+          <AnimatedPressable
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
             key={item.id}
@@ -185,7 +234,7 @@ function IconNav({ items, activeId, onSelect }) {
             >
               {item.label}
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         );
       })}
     </View>
@@ -197,7 +246,7 @@ function ProofHint({ onPress, label = "Proof hidden · Tap to view transaction d
   const interactive = typeof onPress === "function";
 
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole={interactive ? "button" : undefined}
       accessibilityState={interactive ? undefined : { disabled: true }}
       disabled={!interactive}
@@ -213,7 +262,7 @@ function ProofHint({ onPress, label = "Proof hidden · Tap to view transaction d
     >
       <AppIcon name="proof" active size={18} />
       <Text style={[styles.proofHintText, { color: colors.text }]}>{label}</Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -251,7 +300,7 @@ function QuickAction({ label, helper, onPress, disabled = false, tone = "primary
   }
 
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}
@@ -297,7 +346,7 @@ function QuickAction({ label, helper, onPress, disabled = false, tone = "primary
           {helper}
         </Text>
       ) : null}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -353,7 +402,7 @@ function SegmentedControl({ options, value, onChange, activeColor }) {
         const active = option.id === value;
 
         return (
-          <Pressable
+          <AnimatedPressable
             accessibilityRole="button"
             accessibilityState={{ selected: active }}
             key={option.id}
@@ -374,7 +423,7 @@ function SegmentedControl({ options, value, onChange, activeColor }) {
             >
               {option.label}
             </Text>
-          </Pressable>
+          </AnimatedPressable>
         );
       })}
     </View>

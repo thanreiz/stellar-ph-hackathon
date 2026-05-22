@@ -56,6 +56,22 @@ export function getSalesToday(syncedLedger = []) {
     .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
 }
 
+/**
+ * Returns the total expense amount for "today" in Philippine Standard Time.
+ * Records are matched by their numeric `timestamp` field (ms since epoch).
+ * Falls back to `createdAt` ISO string if `timestamp` is absent (legacy records).
+ */
+export function getExpenseToday(expenseRecords = []) {
+  const midnightUTC = getPSTMidnightUTC();
+  return expenseRecords
+    .filter(entry => {
+      const ts = entry.timestamp ?? (entry.createdAt ? new Date(entry.createdAt).getTime() : null);
+      return ts !== null && !Number.isNaN(ts) && ts >= midnightUTC;
+    })
+    .reduce((sum, entry) => sum + Number(entry.amount ?? 0), 0);
+}
+
+
 export function getSalesSeries(records, range, now = new Date()) {
   if (range === "year") return buildYearSeries(records, now);
   if (range === "month") return buildMonthSeries(records, now);

@@ -5,7 +5,6 @@ import {
   TextInput,
   View,
   ScrollView,
-  Pressable,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAppContext, THEMES } from "../context/AppContext";
+import { AnimatedPressable } from "../components/SariSyncUI";
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -188,7 +188,7 @@ export default function OnboardingScreen() {
         </View>
 
         {/* Submit button */}
-        <Pressable
+        <AnimatedPressable
           onPress={handleOnboard}
           style={({ pressed }) => [
             styles.submitButton,
@@ -202,7 +202,7 @@ export default function OnboardingScreen() {
           <Text style={[styles.submitButtonText, { color: colors.buttonTextOnPrimary }]}>
             Save and Complete Onboarding
           </Text>
-        </Pressable>
+        </AnimatedPressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
