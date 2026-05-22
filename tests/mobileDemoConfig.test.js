@@ -167,7 +167,6 @@ describe("mobile demo configuration", () => {
     const onboarding = readProjectFile("app/onboarding.js");
 
     assertIncludes(onboarding, "Store Profile");
-    assertIncludes(onboarding, "Business Snapshot");
     assertIncludes(onboarding, "Connect Wallet");
     assertIncludes(onboarding, "records are secured in the background");
     assertIncludes(onboarding, "Freighter");

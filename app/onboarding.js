@@ -161,57 +161,6 @@ export default function OnboardingScreen() {
           </View>
         </View>
 
-        {/* Section 2: Choose Store Level & Theme */}
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
-          <Text style={[styles.sectionTitle, { color: colors.primary }]}>Business Snapshot</Text>
-          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-            Pick a starter profile for your store. This helps SariSync show the right trust level and credit limit.
-          </Text>
-
-          <View style={styles.levelContainer}>
-            {[1, 2, 3, 4, 5].map((lvl) => {
-              const themeInfo = THEMES[lvl];
-              const isSelected = userLevel === lvl;
-              const lvlNames = {
-                1: "Starting store",
-                2: "Growing tindahan",
-                3: "Steady seller",
-                4: "Corner store",
-                5: "High-volume store",
-              };
-              
-              return (
-                <Pressable
-                  key={lvl}
-                  onPress={() => handleLevelSelect(lvl)}
-                  style={[
-                    styles.levelPill,
-                    {
-                      backgroundColor: isSelected ? themeInfo.colors.primary : themeInfo.colors.cardSecondary,
-                      borderColor: themeInfo.colors.border,
-                      borderWidth: 1,
-                    },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.levelPillText,
-                      {
-                        color: isSelected
-                          ? themeInfo.colors.buttonTextOnPrimary
-                          : themeInfo.colors.text,
-                        fontWeight: isSelected ? "800" : "500",
-                      },
-                    ]}
-                  >
-                    {lvlNames[lvl]}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
         {/* Section 3: Wallet Gate */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>Connect Wallet</Text>
