@@ -217,15 +217,33 @@ npm run seed:lenders
 
 | Item | Value |
 | --- | --- |
+| Your wallet | [`GCTSKXUGU2MG6A6B53YMSLLVO4UGATKW367EB6FV6OW7ZPOLJZO6W2AH`](https://stellar.expert/explorer/testnet/account/GCTSKXUGU2MG6A6B53YMSLLVO4UGATKW367EB6FV6OW7ZPOLJZO6W2AH) |
 | Store wallet | `GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2` |
 | Soroban contract | `CDUE6YHQ5OIIPBLROKUXVIW7HWTPPI4NVNYWA2IKARD6JNH5AYUUQ2OR` |
 | Network | Stellar Testnet |
 | Contract source | [`contracts/sarisync_contract/src/lib.rs`](contracts/sarisync_contract/src/lib.rs) |
 
-Explorer links:
+Testnet explorer links:
 
-- [Store account on Stellar Expert](https://stellar.expert/explorer/testnet/account/GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2)
-- [Soroban contract on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CDUE6YHQ5OIIPBLROKUXVIW7HWTPPI4NVNYWA2IKARD6JNH5AYUUQ2OR)
+| Proof | Link |
+| --- | --- |
+| Your Wallet | [View on Stellar Expert](https://stellar.expert/explorer/testnet/account/GCTSKXUGU2MG6A6B53YMSLLVO4UGATKW367EB6FV6OW7ZPOLJZO6W2AH) |
+| Store Wallet | [View on Stellar Expert](https://stellar.expert/explorer/testnet/account/GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2) |
+| Soroban Contract | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CDUE6YHQ5OIIPBLROKUXVIW7HWTPPI4NVNYWA2IKARD6JNH5AYUUQ2OR) |
+| XLM to USDC to PHPC Swap TX | [f15dcb8c...7521f7](https://stellar.expert/explorer/testnet/tx/f15dcb8c9b72d9d99760521754e4d0ead16a29af1c26c7312079e3489f7521f7) |
+| USDC/PHPC AMM Pool | [23929836...c6dadf](https://stellar.expert/explorer/testnet/liquidity-pool/239298365aa378b7ba956d4a6fc865ed039dd8b25271dee62668be63f1c6dadf) |
+| PHPC Funding TX | [90aec9cb...efc9cd](https://stellar.expert/explorer/testnet/tx/90aec9cbbd50d341dcffaba8bac1cf5dfeda102ac466e19173b692c157efc9cd) |
+
+## Stellar Mainnet
+
+Mainnet proof links for the public demo setup:
+
+| Proof | Link |
+| --- | --- |
+| Your Wallet | [View on Stellar Expert](https://stellar.expert/explorer/public/account/GCTSKXUGU2MG6A6B53YMSLLVO4UGATKW367EB6FV6OW7ZPOLJZO6W2AH) |
+| Store/Issuer Wallet | [View on Stellar Expert](https://stellar.expert/explorer/public/account/GDKM43OI2ZNZIPHPMU7TZQIFHY3VK4MBYKARH27B4PJ4Z22FWYVVVPX2) |
+| 1,000 PHPC Mint TX | [1c220fef...eadf54c](https://stellar.expert/explorer/public/tx/1c220fefa9bded36c43c03d395f4df0f1042058899e90d50b4fcbf68ceadf54c) |
+| XLM/PHPC DEX Offer TX | [15f45ca3...240e7](https://stellar.expert/explorer/public/tx/15f45ca31c68de33a6268a225c2ea686048fb6ddbb578566ad2cd99fd14240e7) |
 
 ## Soroban Contract
 
