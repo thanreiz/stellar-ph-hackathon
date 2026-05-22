@@ -27,7 +27,7 @@ function safeJsonParse(value, fallback) {
  * Creates a Benta sales payload with a collision-resistant id for idempotent sync.
  * Uses Date.now().toString(36) + random suffix — no uuid library needed.
  */
-export function createSalesPayload(amount) {
+export function createSalesPayload(amount, paymentSource = 'cash') {
   const parsedAmount = Number(amount);
 
   if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
@@ -38,6 +38,7 @@ export function createSalesPayload(amount) {
     id: Date.now().toString(36) + Math.random().toString(36).slice(2),
     amount: Math.round(parsedAmount),
     currency: 'PHP',
+    paymentSource,
     type: 'B2B_CASH_VELOCITY_RECORD',
     createdAt: new Date().toISOString(),
     timestamp: Date.now(),

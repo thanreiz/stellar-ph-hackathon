@@ -262,10 +262,11 @@ export function AppProvider({ children }) {
       await AsyncStorage.setItem("sarisync:userLevel", String(details.level));
       
       // Also automatically save the connected Freighter/Stellar wallet connection to storage Service
+      const isPublic = process.env.EXPO_PUBLIC_STELLAR_NETWORK === "public" || process.env.EXPO_PUBLIC_STELLAR_NETWORK === "mainnet";
       const walletConnection = {
         walletName: "Freighter Gate",
         publicKey: details.publicKey.trim(),
-        network: "TESTNET",
+        network: isPublic ? "MAINNET" : "TESTNET",
         connectedAt: new Date().toISOString(),
       };
       await AsyncStorage.setItem("sarisync:walletConnection", JSON.stringify(walletConnection));

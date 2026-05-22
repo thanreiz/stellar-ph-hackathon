@@ -9,7 +9,6 @@ import {
   Alert,
   Animated,
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -54,6 +53,7 @@ import {
   getExpenseTotal,
   getOfflineControlState,
   getSalesToday,
+  getExpenseToday,
 } from "../services/dashboardService";
 import {
   OFFLINE_DRAFT_TYPES,
@@ -75,6 +75,7 @@ import { formatPhp, formatUsdc } from "../utils/formatters";
 import { useTheme } from "../context/ThemeContext";
 import { useAppContext } from "../context/AppContext";
 import {
+  AnimatedPressable,
   BentoMetricCard,
   IconNav,
   ProofDetailsCard,
@@ -109,6 +110,7 @@ const LENDER_OFFERS = [
 const OFFLINE_WARNING = "Offline mode";
 const DEMO_TRANSACTION_HASH = "0819554161045c5e2ef2a629dbd10396d504f76862739ceebf8452addf6c9489";
 const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
+const isPublic = process.env.EXPO_PUBLIC_STELLAR_NETWORK === "public" || process.env.EXPO_PUBLIC_STELLAR_NETWORK === "mainnet";
 
 const NAV_ITEMS = [
   { id: "Kaha", label: "Kaha", icon: "wallet" },
@@ -132,6 +134,29 @@ function calculateTindahanCash(totalSyncedBenta, phpcBalance) {
   const benta = Number(totalSyncedBenta || 0);
   const phpc = Number(phpcBalance || 0);
   return Math.max(0, benta + phpc);
+}
+
+function calculateNetCashBenta(salesLedger, expenseLedger, cashOutAmount = 0) {
+  const sources = ["cash", "gcash", "maya", "bank_transfer"];
+  return sources.reduce((total, source) => {
+    const sales = (salesLedger || []).reduce((sum, record) => {
+      const recordSource = record.paymentSource || "cash";
+      if (recordSource === source) {
+        return sum + Number(record.amount || 0);
+      }
+      return sum;
+    }, 0);
+    const expenses = (expenseLedger || []).reduce((sum, record) => {
+      const recordSource = record.paymentSource || "cash";
+      if (recordSource === source) {
+        return sum + Number(record.amount || 0);
+      }
+      return sum;
+    }, 0);
+    const extra = source === "cash" ? Number(cashOutAmount || 0) : 0;
+    const netForSource = Math.max(0, sales + extra - expenses);
+    return total + netForSource;
+  }, 0);
 }
 
 function formatStageLabel(stage, stageMeta) {
@@ -166,10 +191,12 @@ export default function KahaScreen() {
   }, [isContextLoading, hasCompletedOnboarding]);
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expenseSource, setExpenseSource] = useState("cash");
+  const [bentaSource, setBentaSource] = useState("cash");
   const [expenses, setExpenses] = useState([]);
   const [pendingQueue, setPendingQueue] = useState([]);
   const [syncedLedger, setSyncedLedger] = useState([]);
   const [isSavingBenta, setIsSavingBenta] = useState(false); // 4-B: rage-click guard
+  const [isSavingExpense, setIsSavingExpense] = useState(false);
   const [isLedgerReady, setIsLedgerReady] = useState(false);
   const [isWalletReady, setIsWalletReady] = useState(false);
   const [walletConnection, setWalletConnection] = useState(null);
@@ -191,14 +218,20 @@ export default function KahaScreen() {
   const [unlockedStageInfo, setUnlockedStageInfo] = useState({ stageName: "", limit: 0 });
   const [isRecordModalVisible, setIsRecordModalVisible] = useState(false);
   const [activeRecordTab, setActiveRecordTab] = useState("benta");
+  const [timeRange, setTimeRange] = useState("today");
 
   const displayLedger = network.isOffline ? [] : syncedLedger;
   const totalSyncedBenta = useMemo(
     () => syncedLedger.reduce((sum, record) => sum + Number(record.amount || 0), 0),
     [syncedLedger],
   );
+  const netCashBenta = useMemo(
+    () => calculateNetCashBenta(syncedLedger, expenses, cashOutTotal),
+    [syncedLedger, expenses, cashOutTotal],
+  );
   const salesToday = useMemo(() => getSalesToday(syncedLedger), [syncedLedger]);
   const expenseTotal = useMemo(() => getExpenseTotal(expenses), [expenses]);
+  const expenseToday = useMemo(() => getExpenseToday(expenses), [expenses]);
 
   // stage is now a CREDIT_STAGES string; metadata carries display properties
   const stage = evaluateCreditStage(totalSyncedBenta);
@@ -254,11 +287,11 @@ export default function KahaScreen() {
         if (wallet && wallet.publicKey) {
           const [profile, balances] = await Promise.all([
             fetchOnChainProfile(wallet.publicKey).catch((err) => {
-              console.error("[SorobanService] Profile query failed:", err);
+              console.warn("[SorobanService] Profile query failed:", err);
               return null;
             }),
             fetchLiveWalletBalances(wallet.publicKey).catch((err) => {
-              console.error("[StellarService] Balances query failed:", err);
+              console.warn("[StellarService] Balances query failed:", err);
               if (err.status === 404 || err.message?.includes("404") || err.name === "NotFoundError") {
                 return { xlm: "0.0000", phpc: "0.0000" };
               }
@@ -277,7 +310,7 @@ export default function KahaScreen() {
           }
         }
       } catch (err) {
-        console.error("[SorobanService] Failed to fetch profile/balances in refreshLedger:", err);
+        console.warn("[SorobanService] Failed to fetch profile/balances in refreshLedger:", err);
       }
     }
     setIsLedgerReady(true);
@@ -347,7 +380,7 @@ export default function KahaScreen() {
                   setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
                   setStatusMessage("Store profile updated successfully.");
                 } catch (sorobanError) {
-                  console.error("Soroban profile sync failed:", sorobanError);
+                  console.warn("Soroban profile sync failed:", sorobanError);
                   setStatusMessage(`Failed to sync profile: ${sorobanError.message}`);
                 } finally {
                   setIsSyncingOnChain(false);
@@ -383,7 +416,7 @@ export default function KahaScreen() {
             setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
             setStatusMessage("Offline Sales and secure profile synced successfully.");
           } catch (sorobanError) {
-            console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
+            console.warn("Soroban sync failed during syncWhenOnline:", sorobanError);
             setStatusMessage(`Offline Sales synced, but secure profile update failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
@@ -409,7 +442,7 @@ export default function KahaScreen() {
     setIsSavingBenta(true);
 
     try {
-      const payload = createSalesPayload(bentaAmount);
+      const payload = createSalesPayload(bentaAmount, bentaSource);
 
       if (network.isOffline) {
         const queue = await enqueuePendingSale(payload);
@@ -447,7 +480,7 @@ export default function KahaScreen() {
 
             checkStageUpgrade(oldTotal, totalSyncedBenta);
           } catch (sorobanError) {
-            console.error("Soroban sync failed:", sorobanError);
+            console.warn("Soroban sync failed:", sorobanError);
             setStatusMessage(`Sales saved, but secure profile update failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
@@ -460,6 +493,7 @@ export default function KahaScreen() {
       }
 
       setBentaAmount("");
+      setBentaSource("cash");
     } catch (error) {
       Alert.alert("Benta error", error.message);
     } finally {
@@ -468,19 +502,33 @@ export default function KahaScreen() {
   }
 
   async function handleAddExpense() {
+    if (isSavingExpense) return;
     setStatusMessage("");
+    setIsSavingExpense(true);
 
     try {
       const payload = createExpensePayload({
         amount: expenseAmount,
         paymentSource: expenseSource,
       });
-      const updatedExpenses = await appendExpenseToLedger(payload);
-      setExpenses(updatedExpenses);
+
+      if (network.isOffline) {
+        const updatedExpenses = await appendExpenseToLedger(payload);
+        setExpenses(updatedExpenses);
+        setStatusMessage(OFFLINE_WARNING);
+        await refreshLedger();
+      } else {
+        const updatedExpenses = await appendExpenseToLedger(payload);
+        setExpenses(updatedExpenses);
+        setStatusMessage("Expense record saved.");
+        await refreshLedger();
+      }
+
       setExpenseAmount("");
-      setStatusMessage("Expense record saved.");
     } catch (error) {
       Alert.alert("Expense error", error.message);
+    } finally {
+      setIsSavingExpense(false);
     }
   }
 
@@ -572,7 +620,7 @@ export default function KahaScreen() {
           setOnChainLimit(syncResult.confirmedLimit);
           setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
         } catch (sorobanError) {
-          console.error("Soroban sync failed for outstanding balance:", sorobanError);
+          console.warn("Soroban sync failed for outstanding balance:", sorobanError);
         } finally {
           setIsSyncingOnChain(false);
         }
@@ -635,7 +683,7 @@ export default function KahaScreen() {
           setOnChainLimit(syncResult.confirmedLimit);
           setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
         } catch (sorobanError) {
-          console.error("Soroban sync failed for outstanding balance:", sorobanError);
+          console.warn("Soroban sync failed for outstanding balance:", sorobanError);
         } finally {
           setIsSyncingOnChain(false);
         }
@@ -700,7 +748,7 @@ export default function KahaScreen() {
             <Text style={[styles.topTitle, { color: colors.text }]}>{activeSection}</Text>
           </View>
         </View>
-        <Pressable
+        <AnimatedPressable
           onPress={toggleTheme}
           style={({ pressed }) => [{
             width: 44,
@@ -714,12 +762,12 @@ export default function KahaScreen() {
           }, pressed && styles.pressed]}
         >
           <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
 
       {/* Wallet info row */}
       <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 6, marginBottom: 12 }}>
-        <Pressable
+        <AnimatedPressable
           onPress={() => setIsWalletModalVisible(true)}
           style={({ pressed }) => [
             styles.walletPill,
@@ -730,7 +778,7 @@ export default function KahaScreen() {
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.text }}>
             {network.isOffline ? "SariSync Wallet: Offline" : "Connected: SariSync Wallet"}
           </Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
 
       {!network.isOffline ? (
@@ -770,6 +818,14 @@ export default function KahaScreen() {
           </View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
+              Net Cash Benta
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
+              {network.isOffline ? "Hidden offline" : formatPhp(netCashBenta)}
+            </Text>
+          </View>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
               Wallet Cash
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
@@ -784,13 +840,33 @@ export default function KahaScreen() {
         </View>
       </View>
 
+      {/* ─── TIME RANGE FILTER ─── */}
+      <View style={{ marginBottom: 4, marginTop: 12 }}>
+        <SegmentedControl
+          options={[
+            { id: "today", label: "Today" },
+            { id: "overall", label: "Overall" },
+          ]}
+          value={timeRange}
+          onChange={setTimeRange}
+        />
+      </View>
+
       {/* ─── BENTO GRID HERO (matches Stitch design) ─── */}
       <View style={styles.bentoHero}>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Benta" value={formatPhp(salesToday)} tone="positive" />
+          <BentoMetricCard
+            label="Benta"
+            value={formatPhp(timeRange === "today" ? salesToday : totalSyncedBenta)}
+            tone="positive"
+          />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Gastos" value={formatPhp(expenseTotal)} tone="expense" />
+          <BentoMetricCard
+            label="Gastos"
+            value={formatPhp(timeRange === "today" ? expenseToday : expenseTotal)}
+            tone="expense"
+          />
         </View>
         <View style={styles.bentoMetricCell}>
           <BentoMetricCard label="Tiwala Score" value={`${displayScore}`} />
@@ -844,8 +920,9 @@ export default function KahaScreen() {
 
       <View style={styles.quickActionRow}>
         <QuickAction
-          label="Record Benta"
-          helper="Cash in"
+          label="Record Benta / Gastos"
+          helper="Cash / banks"
+          tone="dual"
           onPress={() => {
             setStatusMessage("");
             setActiveRecordTab("benta");
@@ -853,19 +930,10 @@ export default function KahaScreen() {
           }}
         />
         <QuickAction
-          label="Record Gastos"
-          helper="Cash / banks"
-          tone="expense"
-          onPress={() => {
-            setStatusMessage("");
-            setActiveRecordTab("gastos");
-            setIsRecordModalVisible(true);
-          }}
-        />
-        <QuickAction
           label="Cash Out"
           helper={network.isOffline ? "Offline" : "To GCash/Maya"}
           disabled={network.isOffline}
+          tone="secondary"
           onPress={() => {
             setCashOutAmount("");
             setCashOutStep("form");
@@ -876,7 +944,6 @@ export default function KahaScreen() {
             setIsCashOutModalVisible(true);
           }}
         />
-
       </View>
 
       {network.isOffline ? (
@@ -946,13 +1013,14 @@ export default function KahaScreen() {
               What happened?
             </Text>
 
-            {/* Tab Selector */}
+             {/* Tab Selector */}
             <View style={{ marginBottom: 16 }}>
               <SegmentedControl
                 value={activeRecordTab}
+                activeColor={activeRecordTab === "gastos" ? colors.expense : colors.primary}
                 onChange={(nextTab) => {
-                  setActiveRecordTab(nextTab);
                   setStatusMessage("");
+                  setActiveRecordTab(nextTab);
                 }}
                 options={[
                   { id: "benta", label: "Benta" },
@@ -973,7 +1041,8 @@ export default function KahaScreen() {
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
-                <Pressable
+
+                <AnimatedPressable
                   accessibilityRole="button"
                   disabled={isSavingBenta}
                   onPress={handleAddBenta}
@@ -987,7 +1056,7 @@ export default function KahaScreen() {
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
                     {isSavingBenta ? "Saving..." : "Save Benta"}
                   </Text>
-                </Pressable>
+                </AnimatedPressable>
               </View>
             ) : (
               <View style={{ gap: 8 }}>
@@ -1003,14 +1072,14 @@ export default function KahaScreen() {
                 <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Pinambayad</Text>
                 <View style={[styles.rangeRow, { flexWrap: "wrap", gap: 6 }]}>
                   {EXPENSE_PAYMENT_SOURCES.map((source) => (
-                    <Pressable
+                    <AnimatedPressable
                       key={source.id}
                       accessibilityRole="button"
                       onPress={() => setExpenseSource(source.id)}
                       style={[
                         styles.rangeButton,
                         { borderColor: colors.border, minWidth: "45%", alignItems: "center" },
-                        expenseSource === source.id && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        expenseSource === source.id && { backgroundColor: colors.expense, borderColor: colors.expense },
                       ]}
                     >
                       <Text
@@ -1022,22 +1091,24 @@ export default function KahaScreen() {
                       >
                         {source.label}
                       </Text>
-                    </Pressable>
+                    </AnimatedPressable>
                   ))}
                 </View>
-                <Pressable
+                <AnimatedPressable
                   accessibilityRole="button"
+                  disabled={isSavingExpense}
                   onPress={handleAddExpense}
                   style={({ pressed }) => [
                     styles.primaryButton,
-                    { backgroundColor: colors.primary, marginTop: 8 },
+                    { backgroundColor: colors.expense, marginTop: 8 },
                     pressed && styles.pressed,
+                    isSavingExpense && styles.disabled,
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    Save Gastos
+                    {isSavingExpense ? "Saving..." : "Save Gastos"}
                   </Text>
-                </Pressable>
+                </AnimatedPressable>
               </View>
             )}
 
@@ -1047,7 +1118,7 @@ export default function KahaScreen() {
               </Text>
             ) : null}
 
-            <Pressable
+            <AnimatedPressable
               onPress={() => {
                 setIsRecordModalVisible(false);
                 setStatusMessage("");
@@ -1055,7 +1126,7 @@ export default function KahaScreen() {
               style={[styles.secondaryButton, { backgroundColor: colors.cardSecondary, borderColor: colors.border, marginTop: 16 }]}
             >
               <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Close</Text>
-            </Pressable>
+            </AnimatedPressable>
           </View>
         </View>
       </Modal>
@@ -1081,7 +1152,7 @@ export default function KahaScreen() {
               </Text>
             </View>
 
-            <Pressable
+            <AnimatedPressable
               style={({ pressed }) => [
                 styles.primaryButton,
                 { backgroundColor: colors.primary, marginTop: 20, borderRadius: 99 },
@@ -1090,9 +1161,9 @@ export default function KahaScreen() {
               onPress={() => setIsWalletModalVisible(false)}
             >
               <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Close</Text>
-            </Pressable>
+            </AnimatedPressable>
 
-            <Pressable
+            <AnimatedPressable
               style={({ pressed }) => [
                 styles.secondaryButton,
                 { backgroundColor: colors.cardSecondary, borderColor: colors.error, borderWidth: 1, marginTop: 8, borderRadius: 99 },
@@ -1117,7 +1188,7 @@ export default function KahaScreen() {
               }}
             >
               <Text style={[styles.secondaryButtonText, { color: colors.error }]}>Change Wallet (Disconnect)</Text>
-            </Pressable>
+            </AnimatedPressable>
           </View>
         </View>
       </Modal>
@@ -1184,7 +1255,7 @@ export default function KahaScreen() {
               You can now use your credit limit to fund your supplier invoices or request a microloan.
             </Text>
 
-            <Pressable
+            <AnimatedPressable
               style={({ pressed }) => [
                 styles.primaryButton,
                 { backgroundColor: colors.primary, marginTop: 24, borderRadius: 99, width: "100%" },
@@ -1195,7 +1266,7 @@ export default function KahaScreen() {
               <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
                 Continue
               </Text>
-            </Pressable>
+            </AnimatedPressable>
           </View>
         </View>
       </Modal>
@@ -1227,7 +1298,7 @@ export default function KahaScreen() {
                     {["GCash", "Maya", "BDO", "BPI"].map((p) => {
                       const isSelected = selectedProvider === p;
                       return (
-                        <Pressable
+                        <AnimatedPressable
                           key={p}
                           onPress={() => setSelectedProvider(p)}
                           style={{
@@ -1240,7 +1311,7 @@ export default function KahaScreen() {
                           }}
                         >
                           <Text style={{ fontSize: 13, fontWeight: "700", color: isSelected ? colors.onPrimaryContainer : colors.text }}>{p}</Text>
-                        </Pressable>
+                        </AnimatedPressable>
                       );
                     })}
                   </View>
@@ -1280,7 +1351,7 @@ export default function KahaScreen() {
                 ) : null}
 
                 <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-                  <Pressable
+                  <AnimatedPressable
                     style={({ pressed }) => [
                       styles.primaryButton,
                       { flex: 1, backgroundColor: colors.primary, borderRadius: 99 },
@@ -1310,8 +1381,8 @@ export default function KahaScreen() {
                     }}
                   >
                     <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Continue</Text>
-                  </Pressable>
-                  <Pressable
+                  </AnimatedPressable>
+                  <AnimatedPressable
                     style={({ pressed }) => [
                       styles.secondaryButton,
                       { flex: 1, backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99, marginTop: 0 },
@@ -1320,7 +1391,7 @@ export default function KahaScreen() {
                     onPress={() => setIsCashOutModalVisible(false)}
                   >
                     <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
-                  </Pressable>
+                  </AnimatedPressable>
                 </View>
               </View>
             )}
@@ -1365,7 +1436,7 @@ export default function KahaScreen() {
                 ) : null}
 
                 <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-                  <Pressable
+                  <AnimatedPressable
                     style={({ pressed }) => [
                       styles.primaryButton,
                       { flex: 1, backgroundColor: colors.primary, borderRadius: 99 },
@@ -1429,7 +1500,7 @@ export default function KahaScreen() {
                               setOnChainLimit(syncResult.confirmedLimit);
                               setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
                             } catch (sorobanError) {
-                              console.error("Soroban profile sync failed during cash-out:", sorobanError);
+                              console.warn("Soroban profile sync failed during cash-out:", sorobanError);
                             }
                           }
 
@@ -1442,8 +1513,8 @@ export default function KahaScreen() {
                     }}
                   >
                     <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Confirm and Pay</Text>
-                  </Pressable>
-                  <Pressable
+                  </AnimatedPressable>
+                  <AnimatedPressable
                     style={({ pressed }) => [
                       styles.secondaryButton,
                       { flex: 1, backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99, marginTop: 0 },
@@ -1452,7 +1523,7 @@ export default function KahaScreen() {
                     onPress={() => setIsCashOutModalVisible(false)}
                   >
                     <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
-                  </Pressable>
+                  </AnimatedPressable>
                 </View>
               </View>
             )}
@@ -1491,7 +1562,7 @@ export default function KahaScreen() {
                   </View>
                 </View>
 
-                <Pressable
+                <AnimatedPressable
                   style={({ pressed }) => [
                     styles.primaryButton,
                     { backgroundColor: colors.primary, borderRadius: 99, width: "100%", marginTop: 10 },
@@ -1500,7 +1571,7 @@ export default function KahaScreen() {
                   onPress={() => setIsCashOutModalVisible(false)}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Close</Text>
-                </Pressable>
+                </AnimatedPressable>
               </View>
             )}
 
@@ -1604,7 +1675,7 @@ function WalletConnectionGate({ onConnect }) {
           <Text style={{ fontSize: 24, color: colors.primary }}>🔑</Text>
           <Text style={[styles.title, { color: colors.primary, fontSize: 22, fontWeight: "800", marginBottom: 0 }]}>SariSync</Text>
         </View>
-        <Pressable
+        <AnimatedPressable
           onPress={toggleTheme}
           style={({ pressed }) => [
             {
@@ -1618,7 +1689,7 @@ function WalletConnectionGate({ onConnect }) {
           ]}
         >
           <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
-        </Pressable>
+        </AnimatedPressable>
       </View>
 
       {/* Main Connection Card */}
@@ -1652,7 +1723,7 @@ function WalletConnectionGate({ onConnect }) {
           </View>
 
           {/* Primary Action Button */}
-          <Pressable
+          <AnimatedPressable
             accessibilityRole="button"
             onPress={() => connect(publicKey)}
             style={({ pressed }) => [
@@ -1666,7 +1737,7 @@ function WalletConnectionGate({ onConnect }) {
             <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
               {isConnecting ? "Connecting..." : "Connect Freighter Wallet"}
             </Text>
-          </Pressable>
+          </AnimatedPressable>
 
           {/* Divider */}
           <View style={{ flexDirection: "row", alignItems: "center", marginVertical: 8 }}>
@@ -1676,7 +1747,7 @@ function WalletConnectionGate({ onConnect }) {
           </View>
 
           {/* Secondary Action Button */}
-          <Pressable
+          <AnimatedPressable
             accessibilityRole="button"
             onPress={() => connect(DEMO_WALLET_PUBLIC_KEY)}
             style={({ pressed }) => [
@@ -1686,7 +1757,7 @@ function WalletConnectionGate({ onConnect }) {
             ]}
           >
             <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Use Demo Freighter Account</Text>
-          </Pressable>
+          </AnimatedPressable>
 
           {errorMessage ? <Text style={[styles.statusText, { color: colors.error, textAlign: "center", marginTop: 8 }]}>{errorMessage}</Text> : null}
         </View>
@@ -1735,7 +1806,7 @@ function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isO
       <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary }]}>
         Draft status: pending_online_submission · Ready online: {draftsReadyForSubmission.length}
       </Text>
-      <Pressable
+      <AnimatedPressable
         disabled={submitDisabled}
         onPress={onSubmit}
         style={({ pressed }) => [
@@ -1746,7 +1817,7 @@ function OfflineWorkPanel({ summary, capabilities, draftsReadyForSubmission, isO
         ]}
       >
         <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Submit when online</Text>
-      </Pressable>
+      </AnimatedPressable>
     </View>
   );
 }
@@ -1820,7 +1891,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
               <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{offer.description}</Text>
               <Text style={[styles.bodyText, { color: colors.textSecondary, fontSize: 11, marginTop: 2 }]}>Interest: {offer.interestRate}</Text>
             </View>
-            <Pressable
+            <AnimatedPressable
               disabled={buttonDisabled}
               onPress={() => setSelectedOffer(offer)}
               style={({ pressed }) => [
@@ -1833,7 +1904,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
               <Text style={[styles.loanButtonText, { color: buttonDisabled ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
                 {!controlState.canTransact ? "Offline" : isReadOnly ? "Locked" : isTooHigh ? "Too High" : "Humingi"}
               </Text>
-            </Pressable>
+            </AnimatedPressable>
           </View>
         );
       })}
@@ -1866,12 +1937,12 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                 <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Amount: <Text style={{ fontWeight: "700", color: colors.tertiary }}>{formatPhp(selectedOffer.amountPhpc)}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Interest: {selectedOffer.interestRate}</Text>
                 <Text style={[styles.bodyText, { marginTop: 8, color: colors.textSecondary, fontSize: 12 }]}>
-                  This is a Stellar Testnet transaction. PHPC will be transferred to your store wallet.
+                  This is a Stellar {isPublic ? "Mainnet" : "Testnet"} transaction. PHPC will be transferred to your store wallet.
                 </Text>
               </>
             )}
             <View style={{ flexDirection: "row", marginTop: 16 }}>
-              <Pressable
+              <AnimatedPressable
                 style={({ pressed }) => [
                   styles.primaryButton,
                   { flex: 1, marginRight: 8, backgroundColor: colors.primary },
@@ -1880,8 +1951,8 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                 onPress={() => handleRequest(selectedOffer)}
               >
                 <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isRequesting ? "Requesting..." : "Accept"}</Text>
-              </Pressable>
-              <Pressable
+              </AnimatedPressable>
+              <AnimatedPressable
                 style={({ pressed }) => [
                   styles.secondaryButton,
                   { flex: 1, marginTop: 0, backgroundColor: colors.cardSecondary, borderColor: colors.border },
@@ -1890,7 +1961,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
                 onPress={() => setSelectedOffer(null)}
               >
                 <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
-              </Pressable>
+              </AnimatedPressable>
             </View>
           </View>
         </View>
@@ -1959,7 +2030,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
             </View>
             <View style={styles.alignRight}>
               <Text style={[styles.debtAmount, { color: colors.error }]}>{formatPhp(loan.amountPhpDisplay)}</Text>
-              <Pressable
+              <AnimatedPressable
                 disabled={isRepaying}
                 onPress={() => setConfirmLoan(loan)}
                 style={({ pressed }) => [
@@ -1972,7 +2043,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 <Text style={styles.bayadButtonText}>
                   {!controlState.canTransact ? "Draft" : "Bayad"}
                 </Text>
-              </Pressable>
+              </AnimatedPressable>
             </View>
           </View>
         ))
@@ -2026,9 +2097,9 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
             autoCorrect={false}
           />
           <Text style={[styles.bodyText, { fontSize: 11, color: colors.textSecondary }]}>
-            Sample Testnet TX: {DEMO_TRANSACTION_HASH}
+            {isPublic ? "Sample Mainnet TX: " : "Sample Testnet TX: "}{DEMO_TRANSACTION_HASH}
           </Text>
-          <Pressable
+          <AnimatedPressable
             disabled={isValidating || !validateHash.trim()}
             onPress={handleValidate}
             style={({ pressed }) => [
@@ -2039,7 +2110,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
             ]}
           >
             <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{isValidating ? "Validating..." : "Validate"}</Text>
-          </Pressable>
+          </AnimatedPressable>
 
           {validationResult && (
             <View style={[styles.proofResultCard, { marginTop: 12, backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -2072,13 +2143,13 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 <Text style={[styles.bodyText, { marginTop: 4, color: colors.text }]}>Amount: <Text style={{ fontWeight: "700", color: colors.error }}>{formatPhp(confirmLoan.amountPhpDisplay)}</Text></Text>
                 <Text style={[styles.bodyText, { marginTop: 8, fontSize: 12, color: colors.textSecondary }]}>
                   {controlState.canTransact
-                    ? "This is a Stellar Testnet transaction that will send PHPC from your store wallet."
+                    ? `This is a Stellar ${isPublic ? "Mainnet" : "Testnet"} transaction that will send PHPC from your store wallet.`
                     : "Offline now. This will be saved as a repayment draft and not yet broadcasted to Stellar."}
                 </Text>
               </>
             )}
             <View style={{ flexDirection: "row", marginTop: 16 }}>
-              <Pressable
+              <AnimatedPressable
                 style={({ pressed }) => [
                   styles.primaryButton,
                   { flex: 1, marginRight: 8, backgroundColor: colors.error },
@@ -2089,8 +2160,8 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 <Text style={[styles.primaryButtonText, { color: "#FFFFFF" }]}>
                   {isRepaying ? "Paying..." : controlState.canTransact ? "Pay" : "Save Draft"}
                 </Text>
-              </Pressable>
-              <Pressable
+              </AnimatedPressable>
+              <AnimatedPressable
                 style={({ pressed }) => [
                   styles.secondaryButton,
                   { flex: 1, marginTop: 0, backgroundColor: colors.cardSecondary, borderColor: colors.border },
@@ -2099,7 +2170,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 onPress={() => setConfirmLoan(null)}
               >
                 <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
-              </Pressable>
+              </AnimatedPressable>
             </View>
           </View>
         </View>
@@ -2169,7 +2240,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
         </>
       ) : null}
 
-      <Pressable
+      <AnimatedPressable
         onPress={onCreateDocument}
         style={({ pressed }) => [
           styles.primaryButton,
@@ -2178,7 +2249,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
         ]}
       >
         <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Gumawa ng Dokumento</Text>
-      </Pressable>
+      </AnimatedPressable>
       {documentStatusMessage ? (
         <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary, textAlign: "center" }]}>
           {documentStatusMessage}
@@ -2214,7 +2285,7 @@ function OnlineActionButton({ label, controlState, onPress }) {
 
   return (
     <>
-      <Pressable
+      <AnimatedPressable
         disabled={disabled}
         onPress={onPress}
         style={({ pressed }) => [
@@ -2225,7 +2296,7 @@ function OnlineActionButton({ label, controlState, onPress }) {
         ]}
       >
         <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>{disabled ? `🔒 ${label}` : label}</Text>
-      </Pressable>
+      </AnimatedPressable>
       {disabled ? <Text style={[styles.lockHint, { color: colors.textSecondary }]}>{controlState.reason}</Text> : null}
     </>
   );

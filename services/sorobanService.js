@@ -43,7 +43,7 @@ export async function fetchOnChainProfile(storePublicKey) {
 
     const simResult = await server.simulateTransaction(tx);
     if (simResult.error) {
-      console.error('[SorobanService] simulateTransaction error detail:', JSON.stringify(simResult.error));
+      console.warn('[SorobanService] simulateTransaction error detail:', JSON.stringify(simResult.error));
       throw new Error(simResult.error);
     }
     
@@ -69,7 +69,7 @@ export async function fetchOnChainProfile(storePublicKey) {
     
     return null;
   } catch (error) {
-    console.error('[SorobanService] Failed to fetch on-chain profile:', error.message || error);
+    console.warn('[SorobanService] Failed to fetch on-chain profile:', error.message || error);
     return null;
   }
 }

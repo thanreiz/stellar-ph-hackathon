@@ -6,6 +6,7 @@ import {
   getOfflineControlState,
   getSalesSeries,
   getSalesToday,
+  getExpenseToday,
 } from "../services/dashboardService.js";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -38,9 +39,22 @@ describe("dashboard sales summaries", () => {
     }
   });
 
+  it("calculates expenses today using PST midnight boundary", () => {
+    const realDateNow = Date.now;
+    Date.now = () => PST_MAY20_MIDNIGHT_UTC + 12 * 60 * 60 * 1000;
+    try {
+      // Only the two "today PST" records (1200 + 800) should count
+      assert.equal(getExpenseToday(records), 2000);
+    } finally {
+      Date.now = realDateNow;
+    }
+  });
+
   it("returns 0 for empty ledger", () => {
     assert.equal(getSalesToday([]), 0);
+    assert.equal(getExpenseToday([]), 0);
   });
+
 
   it("builds graph series for year, month, week, and day", () => {
     const now = new Date("2026-05-20T12:00:00.000Z");

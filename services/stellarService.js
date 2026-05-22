@@ -348,7 +348,7 @@ export async function getStoreBalances(publicKey) {
       usdc: usdcBalance,
     };
   } catch (error) {
-    console.error("[StellarService] Failed to fetch balances from Horizon:", error);
+    console.warn("[StellarService] Failed to fetch balances from Horizon:", error);
     return null;
   }
 }

@@ -40,4 +40,75 @@ describe("tindahan cash formula and conversion rates", () => {
     // Expected = Math.max(0, 0) = 0
     assert.equal(calculateTindahanCash(-100, 50), 0);
   });
+
+  it("defines the calculateNetCashBenta function in app/index.js", () => {
+    const indexSource = readProjectFile("app/index.js");
+    assert.match(indexSource, /function calculateNetCashBenta/);
+  });
+
+  it("calculates Net Cash Benta by subtracting cash expenses from sales ledger", () => {
+    function calculateNetCashBenta(salesLedger, expenseLedger, cashOutAmount = 0) {
+      const sources = ["cash", "gcash", "maya", "bank_transfer"];
+      return sources.reduce((total, source) => {
+        const sales = (salesLedger || []).reduce((sum, record) => {
+          const recordSource = record.paymentSource || "cash";
+          if (recordSource === source) {
+            return sum + Number(record.amount || 0);
+          }
+          return sum;
+        }, 0);
+        const expenses = (expenseLedger || []).reduce((sum, record) => {
+          const recordSource = record.paymentSource || "cash";
+          if (recordSource === source) {
+            return sum + Number(record.amount || 0);
+          }
+          return sum;
+        }, 0);
+        const extra = source === "cash" ? Number(cashOutAmount || 0) : 0;
+        const netForSource = Math.max(0, sales + extra - expenses);
+        return total + netForSource;
+      }, 0);
+    }
+
+    const salesLedger = [
+      { amount: 5000 },
+      { amount: 3000, paymentSource: "cash" },
+      { amount: 2000, paymentSource: "gcash" }, // non-cash
+    ];
+    const expenseLedger = [
+      { amount: 1000, paymentSource: "cash" },
+      { amount: 500, paymentSource: "gcash" }, // non-cash
+      { amount: 2000, paymentSource: "cash" },
+    ];
+
+    // Net Cash: Math.max(0, 5000 + 3000 - 3000) = 5000
+    // Net GCash: Math.max(0, 2000 - 500) = 1500
+    // Total Expected Benta = 5000 + 1500 = 6500
+    const netCashBenta = calculateNetCashBenta(salesLedger, expenseLedger);
+    assert.equal(netCashBenta, 6500);
+
+    // Test with cash out amount (+1500 to Cash source)
+    // Net Cash: Math.max(0, 8000 + 1500 - 3000) = 6500
+    // Net GCash: 1500
+    // Total Expected = 8000
+    assert.equal(calculateNetCashBenta(salesLedger, expenseLedger, 1500), 8000);
+
+    // Test negative clamping (huge cash expense, GCash is unaffected)
+    const hugeExpenseLedger = [
+      { amount: 10000, paymentSource: "cash" },
+    ];
+    // Net Cash: Math.max(0, 8000 - 10000) = 0
+    // Net GCash: Math.max(0, 2000 - 0) = 2000 (since GCash expenses are 0 in hugeExpenseLedger)
+    // Total Expected = 2000
+    assert.equal(calculateNetCashBenta(salesLedger, hugeExpenseLedger), 2000);
+
+    // Explicit test for isolated clamping:
+    // Cash balance is negative (5000 - 10000 = -5000 => clamps to 0)
+    // GCash balance is positive (2000 - 500 = 1500 => remains 1500)
+    const mixedExpenseLedger = [
+      { amount: 10000, paymentSource: "cash" },
+      { amount: 500, paymentSource: "gcash" }
+    ];
+    assert.equal(calculateNetCashBenta(salesLedger, mixedExpenseLedger), 1500);
+  });
 });
