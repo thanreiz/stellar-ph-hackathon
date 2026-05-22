@@ -514,7 +514,7 @@ export default function KahaScreen() {
   const handleResetDemo = useCallback(() => {
     Alert.alert(
       "Reset Demo Data?",
-      "This will completely erase all local data including sales, expenses, receipts, loans, drafts, cash out stats, and Freighter wallet connections. This cannot be undone.",
+      "This will completely erase all local transaction data, including sales, expenses, receipts, loans, drafts, and cash out stats. Your wallet connection and store profile will remain active.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -523,22 +523,8 @@ export default function KahaScreen() {
           onPress: async () => {
             try {
               await resetDemoData();
-              await clearOnboarding();
-              setWalletConnection(null);
-              setPendingQueue([]);
-              setSyncedLedger([]);
-              setReceipts([]);
-              setLoans([]);
-              setOfflineDrafts([]);
-              setExpenses([]);
-              setOutstandingBalance(0);
-              setCashOutTotal(0);
-              setPhpcBalance("0.00");
-              setXlmBalance("0.0000");
-              setOnChainScore(null);
-              setOnChainLimit(null);
-              setOnChainOutstandingBalance(null);
-              Alert.alert("Reset Complete", "The demo data has been fully reset.");
+              await refreshLedger();
+              Alert.alert("Reset Complete", "The demo transaction data has been fully reset.");
             } catch (err) {
               Alert.alert("Reset Error", err.message);
             }
@@ -546,7 +532,7 @@ export default function KahaScreen() {
         }
       ]
     );
-  }, [clearOnboarding]);
+  }, [refreshLedger]);
 
   // 4-B: rage-click guard — disable before the first await
   async function handleAddBenta() {

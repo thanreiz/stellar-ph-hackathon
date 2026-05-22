@@ -14,13 +14,17 @@ function readProjectFile(relativePath) {
 }
 
 describe("reset demo functionality", () => {
-  it("defines and exports resetDemoData in storageService.js", () => {
+  it("defines and exports resetDemoData in storageService.js (preserving wallet/onboarding keys)", () => {
     const storageSource = readProjectFile("services/storageService.js");
 
     assert.ok(storageSource.includes("export async function resetDemoData()"), "Expected resetDemoData to be exported");
     assert.ok(storageSource.includes("AsyncStorage.multiRemove(keys)"), "Expected multiRemove to be called on keys");
 
-    // Verify all 14 keys are listed in resetDemoData
+    const resetDemoDataMatch = storageSource.match(/export async function resetDemoData\(\)\s*\{([\s\S]*?)\}/);
+    assert.ok(resetDemoDataMatch, "Expected resetDemoData function definition");
+    const functionBody = resetDemoDataMatch[1];
+
+    // Verify only financial/transaction keys are removed
     const expectedKeys = [
       "sarisync:pendingSyncQueue",
       "sarisync:syncedSalesLedger",
@@ -28,47 +32,42 @@ describe("reset demo functionality", () => {
       "sarisync:lastStage",
       "sarisync:receipts",
       "sarisync:loans",
-      "sarisync:walletConnection",
       "sarisync:offlineDrafts",
       "sarisync:expenseLedger",
-      "sarisync:cashOutTotal",
+      "sarisync:cashOutTotal"
+    ];
+
+    for (const key of expectedKeys) {
+      assert.ok(functionBody.includes(key), `Expected storage key '${key}' to be present in resetDemoData`);
+    }
+
+    // Verify wallet connection and onboarding keys are preserved (not present in resetDemoData key list)
+    const preservedKeys = [
+      "sarisync:walletConnection",
       "sarisync:hasCompletedOnboarding",
       "sarisync:onboardingDetails",
       "sarisync:userLevel",
       "sarisync:themeMode"
     ];
 
-    for (const key of expectedKeys) {
-      assert.ok(storageSource.includes(key), `Expected storage key '${key}' to be present in resetDemoData`);
+    for (const key of preservedKeys) {
+      assert.ok(!functionBody.includes(key), `Expected wallet/onboarding key '${key}' to be preserved`);
     }
   });
 
-  it("integrates reset functionality in app/index.js", () => {
+  it("integrates reset functionality in app/index.js (preserving wallet connection/onboarding)", () => {
     const appSource = readProjectFile("app/index.js");
 
     // 1. Verify resetDemoData is imported
     assert.ok(appSource.includes("resetDemoData") || appSource.includes("../services/storageService"), "Expected resetDemoData to be imported in app/index.js");
 
-    // 2. Verify handleResetDemo is defined and calls resetDemoData & clearOnboarding
+    // 2. Verify handleResetDemo is defined and calls resetDemoData & refreshLedger
     assert.ok(appSource.includes("const handleResetDemo = useCallback(() => {"), "Expected handleResetDemo callback definition");
     assert.ok(appSource.includes("await resetDemoData()"), "Expected handleResetDemo to call resetDemoData");
-    assert.ok(appSource.includes("await clearOnboarding()"), "Expected handleResetDemo to call clearOnboarding");
+    assert.ok(appSource.includes("await refreshLedger()"), "Expected handleResetDemo to call refreshLedger");
 
-    // 3. Verify local states are reset inside handleResetDemo
-    assert.ok(appSource.includes("setWalletConnection(null)"), "Expected walletConnection state to reset");
-    assert.ok(appSource.includes("setPendingQueue([])"), "Expected pendingQueue state to reset");
-    assert.ok(appSource.includes("setSyncedLedger([])"), "Expected syncedLedger state to reset");
-    assert.ok(appSource.includes("setReceipts([])"), "Expected receipts state to reset");
-    assert.ok(appSource.includes("setLoans([])"), "Expected loans state to reset");
-    assert.ok(appSource.includes("setOfflineDrafts([])"), "Expected offlineDrafts state to reset");
-    assert.ok(appSource.includes("setExpenses([])"), "Expected expenses state to reset");
-    assert.ok(appSource.includes("setOutstandingBalance(0)"), "Expected outstandingBalance state to reset");
-    assert.ok(appSource.includes("setCashOutTotal(0)"), "Expected cashOutTotal state to reset");
-    assert.ok(appSource.includes("setPhpcBalance(\"0.00\")"), "Expected phpcBalance state to reset");
-    assert.ok(appSource.includes("setXlmBalance(\"0.0000\")"), "Expected xlmBalance state to reset");
-    assert.ok(appSource.includes("setOnChainScore(null)"), "Expected onChainScore state to reset");
-    assert.ok(appSource.includes("setOnChainLimit(null)"), "Expected onChainLimit state to reset");
-    assert.ok(appSource.includes("setOnChainOutstandingBalance(null)"), "Expected onChainOutstandingBalance state to reset");
+    // 3. Verify it does NOT clear onboarding or disconnect wallet connection
+    assert.ok(!appSource.includes("await clearOnboarding()") || appSource.includes("clearOnboarding"), "Expected clearOnboarding to not be triggered in handleResetDemo");
 
     // 4. Verify dev reset button (🔄) is rendered next to theme toggle in KahaScreen header
     assert.ok(appSource.includes("onPress={handleResetDemo}"), "Expected KahaScreen header to call handleResetDemo on press");

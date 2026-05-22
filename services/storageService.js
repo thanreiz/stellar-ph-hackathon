@@ -362,14 +362,9 @@ export async function resetDemoData() {
     'sarisync:lastStage',
     'sarisync:receipts',
     'sarisync:loans',
-    'sarisync:walletConnection',
     'sarisync:offlineDrafts',
     'sarisync:expenseLedger',
-    'sarisync:cashOutTotal',
-    'sarisync:hasCompletedOnboarding',
-    'sarisync:onboardingDetails',
-    'sarisync:userLevel',
-    'sarisync:themeMode'
+    'sarisync:cashOutTotal'
   ];
   await AsyncStorage.multiRemove(keys);
 }
