@@ -130,7 +130,10 @@ npx esbuild app/onboarding.js --loader:.js=jsx --outfile=/dev/null
 
 ## 🌐 Deployment
 
-Deployed and running on the Android Emulator and synced to the Stellar Testnet.
+SariSync Ledger is deployed live on Vercel:
+- **Live Web App:** [sarisync-ledger.vercel.app](https://sarisync-ledger.vercel.app)
+
+It is also deployed and running on the Android Emulator and synced to the Stellar Testnet.
 
 ### Testnet
 
