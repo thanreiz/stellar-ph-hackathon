@@ -433,12 +433,12 @@ export default function ScannerScreen() {
                   setShowQrError(false);
                 }}
               >
-                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Validate Stellar Invoice</Text>
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Check Invoice</Text>
               </Pressable>
             </View>
 
             <Text style={{ textAlign: "center", fontSize: 11, color: colors.textSecondary, marginTop: 4 }}>
-              ℹ️ All data is secure and encrypted on the Stellar Ledger.
+              ℹ️ All data is protected and saved for proof when you need it.
             </Text>
 
             {scanError && !showQrError ? (
@@ -487,7 +487,7 @@ export default function ScannerScreen() {
             <Pressable style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]} onPress={() => setCurrentStep("scan")}>
               <Text style={{ fontSize: 22, color: colors.primary }}>←</Text>
             </Pressable>
-            <Text style={[styles.headerTitle, { color: colors.primary }]}>SariSync Ledger</Text>
+            <Text style={[styles.headerTitle, { color: colors.primary }]}>SariSync</Text>
           </View>
           <Pressable style={styles.iconButton} onPress={toggleTheme}>
             <Text style={{ fontSize: 16 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
@@ -548,13 +548,13 @@ export default function ScannerScreen() {
               </View>
             </View>
  
-            {/* Stellar Secure block info */}
+            {/* Secure payment info */}
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: colors.card, padding: 12, borderRadius: 12, borderColor: colors.border, borderWidth: 1, marginTop: 12 }}>
               <Text style={{ fontSize: 24 }}>🚀</Text>
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>Secure Blockchain Settlement</Text>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: colors.text }}>Secure Supplier Payment</Text>
                 <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 1, lineHeight: 13 }}>
-                  This will be settled via Stellar Testnet for fast and secure B2B settlement.
+                  This will be settled securely for fast supplier payments.
                 </Text>
               </View>
             </View>
@@ -564,7 +564,7 @@ export default function ScannerScreen() {
           <View style={{ gap: 2, paddingHorizontal: 4 }}>
             <Row label="Category" value="Grocery Supply" />
             <Row label="Date" value="May 21, 2026" />
-            <Row label="Blockchain ID" value={`${invoice.supplier_pubkey.slice(0, 10)}...${invoice.supplier_pubkey.slice(-8)}`} />
+            <Row label="Proof ID" value={`${invoice.supplier_pubkey.slice(0, 10)}...${invoice.supplier_pubkey.slice(-8)}`} />
           </View>
 
           <Text style={{ fontSize: 11, fontStyle: "italic", color: colors.textSecondary, textAlign: "center", paddingHorizontal: 16 }}>
@@ -683,7 +683,7 @@ export default function ScannerScreen() {
       <View style={[styles.mainContainer, { backgroundColor: colors.background }]}>
         {/* Top App Bar */}
         <View style={[styles.headerBar, { borderBottomColor: colors.border }]}>
-          <Text style={[styles.headerTitle, { color: colors.primary, marginLeft: 16 }]}>SariSync Ledger</Text>
+          <Text style={[styles.headerTitle, { color: colors.primary, marginLeft: 16 }]}>SariSync</Text>
           <Pressable style={styles.iconButton} onPress={toggleTheme}>
             <Text style={{ fontSize: 16 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
           </Pressable>
@@ -731,7 +731,7 @@ export default function ScannerScreen() {
                 </View>
                 <View style={{ alignItems: "flex-end" }}>
                   <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary }}>Method</Text>
-                  <Text style={{ fontSize: 14, fontWeight: "800", color: colors.text, marginTop: 2 }}>Ledger Wallet</Text>
+                  <Text style={{ fontSize: 14, fontWeight: "800", color: colors.text, marginTop: 2 }}>Wallet</Text>
                 </View>
               </View>
 

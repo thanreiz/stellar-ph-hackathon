@@ -40,13 +40,13 @@ export default function OnboardingScreen() {
       newErrors.monthlyEarnings = "Valid monthly earnings is required.";
     }
     
-    // Validate Stellar Public Key format
+    // Validate the Freighter wallet address without surfacing blockchain jargon.
     const cleanKey = publicKey.trim();
     const stellarPubKeyRegex = /^G[A-Z2-7]{55}$/;
     if (!cleanKey) {
-      newErrors.publicKey = "Your Freighter/Stellar Public Key is required.";
+      newErrors.publicKey = "Your Freighter wallet address is required.";
     } else if (!stellarPubKeyRegex.test(cleanKey)) {
-      newErrors.publicKey = "Invalid Stellar Public Key (Must start with 'G' and be 56 characters long).";
+      newErrors.publicKey = "Enter a valid Freighter wallet address.";
     }
 
     setErrors(newErrors);
@@ -207,7 +207,7 @@ export default function OnboardingScreen() {
           </View>
         </View>
 
-        {/* Section 3: Stellar Wallet Gate */}
+        {/* Section 3: Wallet Gate */}
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, shadowColor: colors.shadow }]}>
           <Text style={[styles.sectionTitle, { color: colors.primary }]}>Connect Wallet</Text>
           <Text style={[styles.infoText, { color: colors.textSecondary }]}>

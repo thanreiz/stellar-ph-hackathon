@@ -150,6 +150,35 @@ export const THEMES = {
   }
 };
 
+const CHOICE_A_DARK_THEME = {
+  theme: "dark",
+  colors: {
+    background: "#08130F",
+    card: "#111D18",
+    cardSecondary: "#172820",
+    surfaceLow: "#1D3329",
+    surfaceLowest: "#0D1713",
+    text: "#F3FBF6",
+    textSecondary: "#B5C8BE",
+    primary: "#7DE2A8",
+    primaryContainer: "#123D2A",
+    onPrimaryContainer: "#C9FADF",
+    secondary: "#9AB3A6",
+    tertiary: "#80D8FF",
+    expense: "#F59E0B",
+    success: "#7DE2A8",
+    error: "#F87171",
+    errorContainer: "#4C1D1D",
+    onErrorContainer: "#FEE2E2",
+    proofBackground: "#10251B",
+    buttonTextOnPrimary: "#082014",
+    border: "#2D4B3D",
+    shadow: "rgba(0, 0, 0, 0.5)",
+    mintContainer: "#123D2A",
+    statusDefault: "#94A3B8",
+  },
+};
+
 const AppContext = createContext({
   hasCompletedOnboarding: false,
   onboardingDetails: null,
@@ -166,6 +195,7 @@ export function AppProvider({ children }) {
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
   const [onboardingDetails, setOnboardingDetails] = useState(null);
   const [userLevel, setUserLevelState] = useState(1);
+  const [themeMode, setThemeMode] = useState("light");
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -174,6 +204,7 @@ export function AppProvider({ children }) {
         const completed = await AsyncStorage.getItem("sarisync:hasCompletedOnboarding");
         const detailsRaw = await AsyncStorage.getItem("sarisync:onboardingDetails");
         const savedLevel = await AsyncStorage.getItem("sarisync:userLevel");
+        const savedThemeMode = await AsyncStorage.getItem("sarisync:themeMode");
 
         if (completed === "true") {
           setHasCompletedOnboarding(true);
@@ -187,6 +218,10 @@ export function AppProvider({ children }) {
           }
         } else if (savedLevel) {
           setUserLevelState(Number(savedLevel));
+        }
+
+        if (savedThemeMode === "dark" || savedThemeMode === "light") {
+          setThemeMode(savedThemeMode);
         }
       } catch (error) {
         console.error("[AppContext] Failed to load onboarding state", error);
@@ -254,12 +289,16 @@ export function AppProvider({ children }) {
     }
   }
 
-  const activeTheme = THEMES[userLevel] || THEMES[1];
+  const activeTheme = themeMode === "dark" ? CHOICE_A_DARK_THEME : THEMES[1];
 
-  // Cycling theme utility: lets components toggle between themes
   async function cycleTheme() {
-    const nextLevel = userLevel === 5 ? 1 : userLevel + 1;
-    await setUserLevel(nextLevel);
+    const nextMode = themeMode === "dark" ? "light" : "dark";
+    setThemeMode(nextMode);
+    try {
+      await AsyncStorage.setItem("sarisync:themeMode", nextMode);
+    } catch (e) {
+      console.error("[AppContext] Failed to save theme mode", e);
+    }
   }
 
   return (
@@ -274,7 +313,7 @@ export function AppProvider({ children }) {
         setUserLevel,
         completeOnboarding,
         clearOnboarding,
-        toggleTheme: cycleTheme, // keep the same toggleTheme name but make it cycle
+        toggleTheme: cycleTheme,
       }}
     >
       {children}

@@ -125,6 +125,13 @@ function calculateTindahanCash(totalSyncedBenta, phpcBalance) {
   return Math.max(0, benta + phpc);
 }
 
+function formatStageLabel(stage, stageMeta) {
+  if (stage === CREDIT_STAGES.READ_ONLY) return "Starter";
+  if (stage === CREDIT_STAGES.MICRO_SARI) return "Micro-Sari";
+  if (stage === CREDIT_STAGES.CORNER_STORE) return "Corner Store";
+  return stageMeta?.name || "Starter";
+}
+
 export default function KahaScreen() {
   const router = useRouter();
   const network = useNetworkStatus();
@@ -324,12 +331,12 @@ export default function KahaScreen() {
               if (storeSecretKey) {
                 setIsSyncingOnChain(true);
                 try {
-                  setStatusMessage("Updating out-of-sync Trust Profile on-chain...");
+                  setStatusMessage("Updating your store profile...");
                   const syncResult = await syncProfileToChain(storeSecretKey, localScore, localLimit, localOutstanding);
                   setOnChainScore(syncResult.confirmedScore);
                   setOnChainLimit(syncResult.confirmedLimit);
                   setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
-                  setStatusMessage("Trust Profile successfully synced to blockchain.");
+                  setStatusMessage("Store profile updated successfully.");
                 } catch (sorobanError) {
                   console.error("Soroban profile sync failed:", sorobanError);
                   setStatusMessage(`Failed to sync profile: ${sorobanError.message}`);
@@ -368,7 +375,7 @@ export default function KahaScreen() {
             setStatusMessage("Offline Sales and secure profile synced successfully.");
           } catch (sorobanError) {
             console.error("Soroban sync failed during syncWhenOnline:", sorobanError);
-            setStatusMessage(`Offline Sales synced, but on-chain sync failed: ${sorobanError.message}`);
+            setStatusMessage(`Offline Sales synced, but secure profile update failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
           }
@@ -432,7 +439,7 @@ export default function KahaScreen() {
             checkStageUpgrade(oldTotal, totalSyncedBenta);
           } catch (sorobanError) {
             console.error("Soroban sync failed:", sorobanError);
-            setStatusMessage(`Sales saved, but on-chain sync failed: ${sorobanError.message}`);
+            setStatusMessage(`Sales saved, but secure profile update failed: ${sorobanError.message}`);
           } finally {
             setIsSyncingOnChain(false);
           }
@@ -473,7 +480,7 @@ export default function KahaScreen() {
       setStatusMessage(controlState.reason);
       return;
     }
-    setStatusMessage(`${label} ready for Stellar Testnet flow.`);
+    setStatusMessage(`${label} is ready.`);
   }
 
   async function handleConnectWallet(publicKey) {
@@ -503,7 +510,7 @@ export default function KahaScreen() {
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(fileUri, {
           mimeType: "text/html",
-          dialogTitle: "SariSync Ledger Document",
+          dialogTitle: "SariSync Proof Document",
           UTI: "public.html",
         });
         setDocumentStatusMessage("Document ready.");
@@ -649,7 +656,7 @@ export default function KahaScreen() {
     }
 
     setStatusMessage(
-      `Ready to submit ${draftsReadyForSubmission.length} offline Stellar draft(s). Review each draft before broadcasting.`,
+      `Ready to submit ${draftsReadyForSubmission.length} offline payment draft(s). Review each draft before sending.`,
     );
   }
 
@@ -675,7 +682,7 @@ export default function KahaScreen() {
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Text style={{ fontSize: 18, color: colors.primary }}>🏪</Text>
-          <Text style={[styles.eyebrow, { color: colors.primary, fontSize: 16, fontWeight: "800", letterSpacing: 0 }]}>SariSync Ledger</Text>
+          <Text style={[styles.eyebrow, { color: colors.primary, fontSize: 16, fontWeight: "800", letterSpacing: 0 }]}>SariSync</Text>
         </View>
         <Pressable
           onPress={toggleTheme}
@@ -714,7 +721,7 @@ export default function KahaScreen() {
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, borderRadius: 24 }]}>
         <View>
           <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Tindahan Cash (Wallet Balance)
+            Tindahan Cash
           </Text>
           <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
             {formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
@@ -727,7 +734,7 @@ export default function KahaScreen() {
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              Total Synced Sales
+              Benta
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
               {formatPhp(totalSyncedBenta)}
@@ -735,7 +742,7 @@ export default function KahaScreen() {
           </View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              PHPC Balance
+              Wallet Cash
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
               {formatPhp(Number(phpcBalance))}
@@ -743,7 +750,7 @@ export default function KahaScreen() {
           </View>
           <View style={{ marginTop: 4 }}>
             <Text style={{ fontSize: 11, color: colors.textSecondary, fontStyle: "italic", lineHeight: 15 }}>
-              * You can only cash out the PHPC balance. Withdrawals are processed on-chain via the anchor and reflect on stellar.expert.
+              * You can only cash out the wallet cash shown here. Proof details are available when you need them.
             </Text>
           </View>
         </View>
@@ -770,8 +777,8 @@ export default function KahaScreen() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
             {stage === CREDIT_STAGES.CORNER_STORE
-              ? "Trust Score & Limits: Max Stage"
-              : `Trust Score & Limits: ${stageMeta.name}`}
+              ? "Tiwala Score at Limit: Max Stage"
+              : `Tiwala Score at Limit: ${formatStageLabel(stage, stageMeta)}`}
           </Text>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.primary }}>
             {stage === CREDIT_STAGES.READ_ONLY
@@ -1062,7 +1069,7 @@ export default function KahaScreen() {
               </View>
 
               <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 16 }}>
-                This wallet address serves as your store's digital ID to securely verify your Trust Score and receipts.
+                This wallet address serves as your store ID for secure payments, Tiwala Score, and receipts.
               </Text>
             </View>
 
@@ -1125,10 +1132,10 @@ export default function KahaScreen() {
           ]}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={{ fontSize: 20, fontWeight: "800", color: colors.primary, textAlign: "center" }}>
-              🔗 Soroban Network
+              Secure Sync
             </Text>
             <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", fontWeight: "700" }}>
-              Syncing your Trust Score and Credit Limit on the blockchain...
+              Syncing your Tiwala Score and loan limit...
             </Text>
             <Text style={{ fontSize: 12, color: colors.textSecondary, textAlign: "center", lineHeight: 18 }}>
               {statusMessage || "Waiting for transaction to confirm. Just a moment."}
@@ -1144,7 +1151,7 @@ export default function KahaScreen() {
               borderColor: colors.border,
             }}>
               <Text style={{ fontSize: 11, color: colors.textSecondary, fontFamily: "monospace", textAlign: "center" }}>
-                Stellar Testnet · Soroban RPC · Poll ✓2s
+                Secured profile update · Checking every 2s
               </Text>
             </View>
           </View>
@@ -1203,7 +1210,7 @@ export default function KahaScreen() {
               <View style={{ gap: 14 }}>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>Cash Out (Off-Ramp)</Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                  You can only cash out your PHPC balance. The withdrawal will be executed on the Stellar blockchain via the anchor and will reflect on stellar.expert.
+                  You can only cash out your wallet cash. Proof details will be available after the withdrawal is processed.
                 </Text>
 
                 <View style={{ gap: 6 }}>
@@ -1444,9 +1451,9 @@ export default function KahaScreen() {
 
             {cashOutStep === "broadcasting" && (
               <View style={{ alignItems: "center", paddingVertical: 20, gap: 14 }}>
-                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Broadcasting Transaction...</Text>
+                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Processing Withdrawal...</Text>
                 <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>
-                  Writing to Stellar Testnet ledger via GoTyme SEP-24 gateway...
+                  Sending your cash-out request securely...
                 </Text>
                 <View style={{ marginVertical: 10 }}>
                   <Text style={{ fontSize: 40 }}>📡</Text>
@@ -1534,7 +1541,7 @@ function LoadingScreen() {
       </View>
 
       {/* Brand */}
-      <Text style={[styles.loadingTitle, { color: colors.text }]}>SariSync Ledger</Text>
+      <Text style={[styles.loadingTitle, { color: colors.text }]}>SariSync</Text>
       <Text style={{ fontSize: 11, fontWeight: "700", color: colors.textSecondary, letterSpacing: 2, textTransform: "uppercase", marginBottom: 32 }}>Your Store Partner</Text>
 
       {/* Rotating message */}
@@ -1565,7 +1572,7 @@ function WalletConnectionGate({ onConnect }) {
     setErrorMessage("");
 
     if (!isValidStellarPublicKey(publicKeyToConnect)) {
-      setErrorMessage("Connect a valid Stellar Testnet G... public key.");
+      setErrorMessage("Paste a valid Freighter wallet address.");
       return;
     }
 
@@ -1585,7 +1592,7 @@ function WalletConnectionGate({ onConnect }) {
       <View style={[styles.walletHeader, { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 24, width: "100%" }]}>
         <View style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }}>
           <Text style={{ fontSize: 24, color: colors.primary }}>🔑</Text>
-          <Text style={[styles.title, { color: colors.primary, fontSize: 22, fontWeight: "800", marginBottom: 0 }]}>SariSync Ledger</Text>
+          <Text style={[styles.title, { color: colors.primary, fontSize: 22, fontWeight: "800", marginBottom: 0 }]}>SariSync</Text>
         </View>
         <Pressable
           onPress={toggleTheme}
@@ -1618,13 +1625,13 @@ function WalletConnectionGate({ onConnect }) {
         <View style={{ gap: 16 }}>
           {/* Input Section */}
           <View style={{ gap: 6 }}>
-            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700", marginLeft: 4 }}>Stellar Public Key</Text>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700", marginLeft: 4 }}>Wallet Address</Text>
             <TextInput
               value={publicKey}
               onChangeText={setPublicKey}
               autoCapitalize="characters"
               autoCorrect={false}
-              placeholder="Paste Stellar G... public key"
+              placeholder="Paste Freighter wallet address"
               placeholderTextColor={colors.textSecondary}
               style={[
                 styles.input,
@@ -1744,10 +1751,10 @@ function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit, onChainScore, 
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Profile</Text>
       <Text style={[styles.stageName, { color: colors.text }]}>Store Settings</Text>
       <InfoRow label="Store type" value="Sari-sari inventory business" />
-      <InfoRow label="Stage" value={stageMeta.name} />
-      <InfoRow label="Trust Score" value={`${displayScore}`} />
+      <InfoRow label="Stage" value={formatStageLabel(stage, stageMeta)} />
+      <InfoRow label="Tiwala Score" value={`${displayScore}`} />
       <InfoRow label="Loan limit" value={formatPhp(displayLimit)} />
-      <InfoRow label="Blockchain Security" value={isOffline ? "Offline Mode (Local)" : "Secured & Verified (Stellar)"} />
+      <InfoRow label="Security" value={isOffline ? "Offline Mode (Local)" : "Secured & Verified"} />
     </View>
   );
 }
