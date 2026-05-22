@@ -12,6 +12,9 @@ const networkPassphrase = isPublic ? Networks.PUBLIC : Networks.TESTNET;
  * Uses transaction simulation so it is fast and free.
  */
 export async function fetchOnChainProfile(storePublicKey) {
+  // Soroban contract is testnet-only — skip silently on mainnet
+  if (isPublic) return null;
+
   const contractId = process.env.EXPO_PUBLIC_SOROBAN_CONTRACT_ID;
   if (!contractId) {
     console.warn('[SorobanService] EXPO_PUBLIC_SOROBAN_CONTRACT_ID is not configured.');
@@ -82,6 +85,18 @@ export async function fetchOnChainProfile(storePublicKey) {
  * Throws on submission error, terminal FAILED status, or polling timeout.
  */
 export async function syncProfileToChain(storeSecretKey, score, limit, outstandingBalance = 0) {
+  // Soroban contract is testnet-only — return passthrough on mainnet so
+  // callers can update local state without showing an error to the user.
+  if (isPublic) {
+    return {
+      success: true,
+      hash: null,
+      confirmedScore: Number(score),
+      confirmedLimit: Number(limit),
+      confirmedOutstandingBalance: Number(outstandingBalance),
+    };
+  }
+
   const contractId = process.env.EXPO_PUBLIC_SOROBAN_CONTRACT_ID;
   if (!contractId) {
     throw new Error('EXPO_PUBLIC_SOROBAN_CONTRACT_ID is not configured.');

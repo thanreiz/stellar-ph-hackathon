@@ -7,3 +7,8 @@ dist-web/
 output/
 .DS_Store
 .env
+.idea/
+scratch/
+dist-android/
+dist-ios/
+contracts/sarisync_contract/target/

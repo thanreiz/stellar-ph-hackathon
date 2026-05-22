@@ -31,7 +31,7 @@ export function createSalesPayload(amount, paymentSource = 'cash') {
   const parsedAmount = Number(amount);
 
   if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-    throw new Error('Benta amount must be a positive number.');
+    throw new Error('Sales amount must be a positive number.');
   }
 
   return {
@@ -80,7 +80,7 @@ export async function getPendingSyncQueue() {
 
 export async function enqueuePendingSale(salesPayload) {
   if (!salesPayload || typeof salesPayload.amount !== 'number') {
-    throw new Error('Invalid Benta payload.');
+    throw new Error('Invalid sales payload.');
   }
 
   const currentQueue = await getPendingSyncQueue();
@@ -327,6 +327,14 @@ export async function appendOfflineDraft(draft) {
   return updated;
 }
 
+export async function saveOfflineDrafts(drafts) {
+  if (!Array.isArray(drafts)) {
+    throw new Error('Drafts must be an array.');
+  }
+  await AsyncStorage.setItem(STORAGE_KEYS.OFFLINE_DRAFTS, JSON.stringify(drafts));
+  return drafts;
+}
+
 // ── Expense ledger ───────────────────────────────────────────────────────────
 
 export async function getExpenseLedger() {
@@ -345,3 +353,20 @@ export async function appendExpenseToLedger(expensePayload) {
   await AsyncStorage.setItem(STORAGE_KEYS.EXPENSE_LEDGER, JSON.stringify(updated));
   return updated;
 }
+
+export async function resetDemoData() {
+  const keys = [
+    'sarisync:pendingSyncQueue',
+    'sarisync:syncedSalesLedger',
+    'sarisync:outstandingLoanBalance',
+    'sarisync:lastStage',
+    'sarisync:receipts',
+    'sarisync:loans',
+    'sarisync:offlineDrafts',
+    'sarisync:expenseLedger',
+    'sarisync:cashOutTotal'
+  ];
+  await AsyncStorage.multiRemove(keys);
+  await AsyncStorage.setItem('sarisync:demoResetActive', 'true');
+}
+

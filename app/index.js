@@ -37,9 +37,12 @@ import {
   getSyncedSalesLedger,
   isValidStellarPublicKey,
   saveWalletConnection,
+  clearWalletConnection,
   syncPendingSalesQueue,
   updateLoanStatus,
   appendReceipt,
+  saveOfflineDrafts,
+  resetDemoData,
 } from "../services/storageService";
 import {
   CREDIT_STAGES,
@@ -61,6 +64,7 @@ import {
   getDraftsReadyForSubmission,
   getOfflineCapabilities,
   summarizeOfflineWork,
+  syncOfflineDrafts,
 } from "../services/offlineDraftService";
 import {
   fetchLiveWalletBalances,
@@ -68,6 +72,8 @@ import {
   repayLoan,
   validateStellarTransaction,
   cashOutPHPC,
+  cashInXlmToPhpc,
+  submitInventoryFinancingSettlement,
 } from "../services/stellarService";
 import { fetchOnChainProfile, syncProfileToChain } from "../services/sorobanService";
 import { generateReceiptDocument } from "../utils/documentGenerator";
@@ -113,9 +119,9 @@ const DEMO_WALLET_PUBLIC_KEY = process.env.EXPO_PUBLIC_STORE_PUBLIC_KEY || "";
 const isPublic = process.env.EXPO_PUBLIC_STELLAR_NETWORK === "public" || process.env.EXPO_PUBLIC_STELLAR_NETWORK === "mainnet";
 
 const NAV_ITEMS = [
-  { id: "Kaha", label: "Kaha", icon: "wallet" },
+  { id: "Kaha", label: "Ledger", icon: "wallet" },
   { id: "Tracker", label: "Tracker", icon: "trend" },
-  { id: "Utang", label: "Utang", icon: "loan" },
+  { id: "Utang", label: "Loans", icon: "loan" },
   { id: "Proof", label: "Proof", icon: "proof" },
 ];
 const EXPENSE_PAYMENT_SOURCES = [
@@ -184,6 +190,15 @@ export default function KahaScreen() {
   const [simPhoneNumber, setSimPhoneNumber] = useState("");
   const [simOtp, setSimOtp] = useState("");
 
+  // Cash In (XLM → USDC → PHPC) States
+  const [isCashInModalVisible, setIsCashInModalVisible] = useState(false);
+  const [cashInXlmAmount, setCashInXlmAmount] = useState("");
+  const [cashInPhpcAmount, setCashInPhpcAmount] = useState("");
+  const [cashInStep, setCashInStep] = useState("form"); // "form" | "broadcasting" | "success"
+  const [cashInError, setCashInError] = useState("");
+  const [cashInTxHash, setCashInTxHash] = useState("");
+  const [cashInIsSubmitting, setCashInIsSubmitting] = useState(false);
+
   useEffect(() => {
     if (!isContextLoading && !hasCompletedOnboarding) {
       router.replace("/onboarding");
@@ -206,6 +221,7 @@ export default function KahaScreen() {
   const [receipts, setReceipts] = useState([]); // 4-D: live receipts
   const [loans, setLoans] = useState([]); // microloan records
   const [offlineDrafts, setOfflineDrafts] = useState([]);
+  const [isSyncingDrafts, setIsSyncingDrafts] = useState(false);
   const [onChainScore, setOnChainScore] = useState(null);
   const [onChainLimit, setOnChainLimit] = useState(null);
   const [onChainOutstandingBalance, setOnChainOutstandingBalance] = useState(null);
@@ -238,9 +254,9 @@ export default function KahaScreen() {
   const stageMeta = getStageMetadata(stage);
   const loanLimit = getLoanLimitForStage(stage);
   const tiwalaScore = calculateTiwalaScore(totalSyncedBenta);
-  const displayScore = (!network.isOffline && onChainScore !== null) ? onChainScore : tiwalaScore;
-  const displayLimit = (!network.isOffline && onChainLimit !== null) ? onChainLimit : loanLimit;
-  const displayOutstandingBalance = (!network.isOffline && onChainOutstandingBalance !== null) ? onChainOutstandingBalance : outstandingBalance;
+  const displayScore = (syncedLedger.length === 0 && pendingQueue.length === 0) ? 30 : ((!network.isOffline && onChainScore !== null) ? onChainScore : tiwalaScore);
+  const displayLimit = (syncedLedger.length === 0 && pendingQueue.length === 0) ? 0 : ((!network.isOffline && onChainLimit !== null) ? onChainLimit : loanLimit);
+  const displayOutstandingBalance = (syncedLedger.length === 0 && pendingQueue.length === 0) ? 0 : ((!network.isOffline && onChainOutstandingBalance !== null) ? onChainOutstandingBalance : outstandingBalance);
   // 4-D: pass live receipts; falls back to SAMPLE_BUSINESS_TRANSACTIONS when empty
   const businessSnapshot = useMemo(
     () => getBusinessSnapshot(syncedLedger, [...receipts, ...expenses]),
@@ -262,7 +278,7 @@ export default function KahaScreen() {
   const isLoading = !network.hasCheckedInitialStatus || !isLedgerReady || !isWalletReady || isContextLoading || !hasCompletedOnboarding;
 
   const refreshLedger = useCallback(async () => {
-    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords, liveOutstandingBalance, savedCashOut] = await Promise.all([
+    const [queue, ledger, liveReceipts, liveLoans, drafts, expenseRecords, liveOutstandingBalance, savedCashOut, demoResetActive] = await Promise.all([
       getPendingSyncQueue(),
       getSyncedSalesLedger(),
       getReceipts(),
@@ -270,7 +286,8 @@ export default function KahaScreen() {
       getOfflineDrafts(),
       getExpenseLedger(),
       getOutstandingLoanBalance(),
-      AsyncStorage.getItem("sarisync:cashOutTotal")
+      AsyncStorage.getItem("sarisync:cashOutTotal"),
+      AsyncStorage.getItem("sarisync:demoResetActive")
     ]);
     setPendingQueue(queue);
     setSyncedLedger(ledger);
@@ -281,15 +298,23 @@ export default function KahaScreen() {
     setOutstandingBalance(liveOutstandingBalance);
     setCashOutTotal(savedCashOut ? Number(savedCashOut) : 0);
 
+    if (demoResetActive === "true") {
+      setOnChainScore(null);
+      setOnChainLimit(null);
+      setOnChainOutstandingBalance(null);
+    }
+
     if (!network.isOffline) {
       try {
         const wallet = await getWalletConnection();
         if (wallet && wallet.publicKey) {
           const [profile, balances] = await Promise.all([
-            fetchOnChainProfile(wallet.publicKey).catch((err) => {
-              console.warn("[SorobanService] Profile query failed:", err);
-              return null;
-            }),
+            demoResetActive === "true"
+              ? Promise.resolve(null)
+              : fetchOnChainProfile(wallet.publicKey).catch((err) => {
+                  console.warn("[SorobanService] Profile query failed:", err);
+                  return null;
+                }),
             fetchLiveWalletBalances(wallet.publicKey).catch((err) => {
               console.warn("[StellarService] Balances query failed:", err);
               if (err.status === 404 || err.message?.includes("404") || err.name === "NotFoundError") {
@@ -315,6 +340,12 @@ export default function KahaScreen() {
     }
     setIsLedgerReady(true);
   }, [network.isOffline]);
+
+  const syncProfileToChainAndClearReset = useCallback(async (storeSecretKey, score, limit, outstandingBalance = 0) => {
+    const result = await syncProfileToChain(storeSecretKey, score, limit, outstandingBalance);
+    await AsyncStorage.removeItem("sarisync:demoResetActive");
+    return result;
+  }, []);
 
   const checkStageUpgrade = useCallback((oldTotal, newTotal) => {
     const oldStage = evaluateCreditStage(oldTotal);
@@ -346,11 +377,82 @@ export default function KahaScreen() {
       .finally(() => setIsWalletReady(true));
   }, []);
 
+  const handleSyncOfflineDrafts = useCallback(async () => {
+    if (isSyncingDrafts) return;
+    setIsSyncingDrafts(true);
+    setStatusMessage("Syncing offline drafts to the network...");
+
+    try {
+      const currentDrafts = await getOfflineDrafts();
+      const pendingDrafts = currentDrafts.filter(d => d.status === "pending_online_submission");
+      if (pendingDrafts.length === 0) {
+        setStatusMessage("No pending offline drafts to sync.");
+        setIsSyncingDrafts(false);
+        return;
+      }
+
+      const result = await syncOfflineDrafts({
+        drafts: currentDrafts,
+        repayLoanFn: repayLoan,
+        submitInvoiceFn: submitInventoryFinancingSettlement,
+        updateLoanStatusFn: updateLoanStatus,
+        getOutstandingLoanBalanceFn: getOutstandingLoanBalance,
+        setOutstandingLoanBalanceFn: setOutstandingLoanBalance,
+        appendReceiptFn: appendReceipt,
+      });
+
+      await saveOfflineDrafts(result.updatedDrafts);
+      setOfflineDrafts(result.updatedDrafts);
+
+      // Recalculate score and limit and sync to Stellar contract
+      const wallet = await getWalletConnection();
+      if (wallet && wallet.publicKey) {
+        const storeSecretKey = process.env.EXPO_PUBLIC_STORE_SECRET_KEY;
+        if (storeSecretKey) {
+          const ledger = await getSyncedSalesLedger();
+          const totalSyncedBenta = ledger.reduce((sum, record) => sum + Number(record.amount || 0), 0);
+          const newScore = calculateTiwalaScore(totalSyncedBenta);
+          const newLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
+          const currentOutstanding = await getOutstandingLoanBalance();
+
+          try {
+            const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, newScore, newLimit, currentOutstanding);
+            setOnChainScore(syncResult.confirmedScore);
+            setOnChainLimit(syncResult.confirmedLimit);
+            setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
+          } catch (sorobanError) {
+            console.warn("Soroban sync failed during draft sync:", sorobanError);
+          }
+        }
+      }
+
+      await refreshLedger();
+
+      if (result.failedCount > 0) {
+        setStatusMessage(`Sync completed: ${result.successCount} succeeded, ${result.failedCount} failed.`);
+      } else {
+        setStatusMessage(`Successfully synced ${result.successCount} offline draft(s).`);
+      }
+    } catch (error) {
+      console.error("Failed to sync offline drafts:", error);
+      setStatusMessage(`Draft sync failed: ${error.message}`);
+    } finally {
+      setIsSyncingDrafts(false);
+    }
+  }, [isSyncingDrafts, refreshLedger]);
+
   useEffect(() => {
     if (!network.hasCheckedInitialStatus || network.isOffline) return;
 
     async function syncWhenOnline() {
       try {
+        // Auto-sync pending drafts if any
+        const drafts = await getOfflineDrafts();
+        const hasPendingDrafts = drafts.some((d) => d.status === "pending_online_submission");
+        if (hasPendingDrafts) {
+          await handleSyncOfflineDrafts();
+        }
+
         const queue = await getPendingSyncQueue();
         if (queue.length === 0) {
           // If online and there are no pending sales to sync, check if the on-chain profile is out of sync
@@ -374,7 +476,7 @@ export default function KahaScreen() {
                 setIsSyncingOnChain(true);
                 try {
                   setStatusMessage("Updating your store profile...");
-                  const syncResult = await syncProfileToChain(storeSecretKey, localScore, localLimit, localOutstanding);
+                  const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, localScore, localLimit, localOutstanding);
                   setOnChainScore(syncResult.confirmedScore);
                   setOnChainLimit(syncResult.confirmedLimit);
                   setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
@@ -409,7 +511,7 @@ export default function KahaScreen() {
           setIsSyncingOnChain(true);
           try {
             setStatusMessage("Syncing your Trust Profile to the secure network...");
-            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit, currentOutstanding);
+            const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, newScore, newLimit, currentOutstanding);
             // 1. Eagerly push confirmed on-chain values the moment the tx finalises
             setOnChainScore(syncResult.confirmedScore);
             setOnChainLimit(syncResult.confirmedLimit);
@@ -433,7 +535,30 @@ export default function KahaScreen() {
     }
 
     syncWhenOnline();
-  }, [network.hasCheckedInitialStatus, network.isOffline, refreshLedger, walletConnection?.publicKey]);
+  }, [network.hasCheckedInitialStatus, network.isOffline, refreshLedger, walletConnection?.publicKey, handleSyncOfflineDrafts]);
+
+  const handleResetDemo = useCallback(() => {
+    Alert.alert(
+      "Reset Demo Data?",
+      "This will completely erase all local transaction data, including sales, expenses, receipts, loans, drafts, and cash out stats. Your wallet connection and store profile will remain active.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset Everything",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await resetDemoData();
+              await refreshLedger();
+              Alert.alert("Reset Complete", "The demo transaction data has been fully reset.");
+            } catch (err) {
+              Alert.alert("Reset Error", err.message);
+            }
+          }
+        }
+      ]
+    );
+  }, [refreshLedger]);
 
   // 4-B: rage-click guard — disable before the first await
   async function handleAddBenta() {
@@ -466,7 +591,7 @@ export default function KahaScreen() {
             const currentOutstanding = await getOutstandingLoanBalance();
 
             setStatusMessage("Syncing your Trust Profile to the secure network...");
-            const syncResult = await syncProfileToChain(storeSecretKey, newScore, newLimit, currentOutstanding);
+            const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, newScore, newLimit, currentOutstanding);
 
             // 1. Eagerly push confirmed on-chain values as soon as tx finalises on Soroban
             setOnChainScore(syncResult.confirmedScore);
@@ -495,7 +620,7 @@ export default function KahaScreen() {
       setBentaAmount("");
       setBentaSource("cash");
     } catch (error) {
-      Alert.alert("Benta error", error.message);
+      Alert.alert("Sales error", error.message);
     } finally {
       setIsSavingBenta(false);
     }
@@ -546,6 +671,7 @@ export default function KahaScreen() {
       publicKey,
     });
     setWalletConnection(connection);
+    await AsyncStorage.removeItem("sarisync:demoResetActive");
   }
 
   async function handleCreateDocument() {
@@ -615,7 +741,7 @@ export default function KahaScreen() {
           const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
 
           setStatusMessage("Syncing outstanding loan balance to the blockchain...");
-          const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, newOutstanding);
+          const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, currentScore, currentLimit, newOutstanding);
           setOnChainScore(syncResult.confirmedScore);
           setOnChainLimit(syncResult.confirmedLimit);
           setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
@@ -678,7 +804,7 @@ export default function KahaScreen() {
           const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
 
           setStatusMessage("Syncing outstanding loan balance to the blockchain...");
-          const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, newOutstanding);
+          const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, currentScore, currentLimit, newOutstanding);
           setOnChainScore(syncResult.confirmedScore);
           setOnChainLimit(syncResult.confirmedLimit);
           setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
@@ -701,6 +827,42 @@ export default function KahaScreen() {
     }
   }
 
+  async function handleCashIn() {
+    if (cashInIsSubmitting) return;
+    setCashInError("");
+    const xlmAmt = parseFloat(cashInXlmAmount);
+    const phpcAmt = parseFloat(cashInPhpcAmount);
+    if (isNaN(xlmAmt) || xlmAmt <= 0) {
+      setCashInError("Please enter a valid XLM amount to spend.");
+      return;
+    }
+    if (isNaN(phpcAmt) || phpcAmt <= 0) {
+      setCashInError("Please enter how many PHPC you want to receive.");
+      return;
+    }
+    if (xlmAmt > Number(xlmBalance)) {
+      setCashInError("Insufficient XLM balance.");
+      return;
+    }
+    setCashInIsSubmitting(true);
+    setCashInStep("broadcasting");
+    try {
+      const result = await cashInXlmToPhpc({
+        amountPhpc: String(phpcAmt),
+        sendMaxXlm: String(xlmAmt),
+      });
+      if (!result.success) throw new Error(result.error);
+      setCashInTxHash(result.transactionHash);
+      await refreshLedger();
+      setCashInStep("success");
+    } catch (err) {
+      setCashInError("Cash In failed: " + err.message);
+      setCashInStep("form");
+    } finally {
+      setCashInIsSubmitting(false);
+    }
+  }
+
   function handleSubmitOfflineWork() {
     if (network.isOffline) {
       setStatusMessage(offlineCapabilities.message);
@@ -712,9 +874,11 @@ export default function KahaScreen() {
       return;
     }
 
-    setStatusMessage(
-      `Ready to submit ${draftsReadyForSubmission.length} offline payment draft(s). Review each draft before sending.`,
-    );
+    if (draftsReadyForSubmission.length > 0) {
+      handleSyncOfflineDrafts();
+    } else {
+      setStatusMessage("Offline sales are synced automatically when online.");
+    }
   }
 
   if (isLoading) {
@@ -722,7 +886,7 @@ export default function KahaScreen() {
   }
 
   if (!walletConnection) {
-    return <WalletConnectionGate onConnect={handleConnectWallet} />;
+    return <WalletConnectionGate onConnect={handleConnectWallet} onReset={handleResetDemo} />;
   }
 
   return (
@@ -748,21 +912,38 @@ export default function KahaScreen() {
             <Text style={[styles.topTitle, { color: colors.text }]}>{activeSection}</Text>
           </View>
         </View>
-        <AnimatedPressable
-          onPress={toggleTheme}
-          style={({ pressed }) => [{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            backgroundColor: colors.cardSecondary,
-            borderWidth: 1,
-            borderColor: colors.border,
-            alignItems: "center",
-            justifyContent: "center",
-          }, pressed && styles.pressed]}
-        >
-          <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
-        </AnimatedPressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <AnimatedPressable
+            onPress={handleResetDemo}
+            style={({ pressed }) => [{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: colors.errorContainer || "#FEE2E2",
+              borderWidth: 1,
+              borderColor: colors.error || "#B91C1C",
+              alignItems: "center",
+              justifyContent: "center",
+            }, pressed && styles.pressed]}
+          >
+            <Text style={{ fontSize: 18 }}>🔄</Text>
+          </AnimatedPressable>
+          <AnimatedPressable
+            onPress={toggleTheme}
+            style={({ pressed }) => [{
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              backgroundColor: colors.cardSecondary,
+              borderWidth: 1,
+              borderColor: colors.border,
+              alignItems: "center",
+              justifyContent: "center",
+            }, pressed && styles.pressed]}
+          >
+            <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+          </AnimatedPressable>
+        </View>
       </View>
 
       {/* Wallet info row */}
@@ -797,7 +978,7 @@ export default function KahaScreen() {
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 18, borderRadius: 24 }]}>
         <View>
           <Text style={{ fontSize: 11, fontWeight: "800", color: colors.textSecondary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Tindahan Cash
+            Store Cash
           </Text>
           <Text style={{ fontSize: 32, fontWeight: "900", color: colors.primary, marginTop: 4 }}>
             {network.isOffline ? "Saved locally" : formatPhp(calculateTindahanCash(totalSyncedBenta, phpcBalance))}
@@ -810,7 +991,7 @@ export default function KahaScreen() {
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              Benta
+              Sales
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
               {network.isOffline ? "Hidden offline" : formatPhp(totalSyncedBenta)}
@@ -818,7 +999,7 @@ export default function KahaScreen() {
           </View>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ fontSize: 12, color: colors.textSecondary, fontWeight: "700" }}>
-              Net Cash Benta
+              Net Cash Sales
             </Text>
             <Text style={{ fontSize: 13, color: colors.text, fontWeight: "800" }}>
               {network.isOffline ? "Hidden offline" : formatPhp(netCashBenta)}
@@ -856,20 +1037,20 @@ export default function KahaScreen() {
       <View style={styles.bentoHero}>
         <View style={styles.bentoMetricCell}>
           <BentoMetricCard
-            label="Benta"
+            label="Sales"
             value={formatPhp(timeRange === "today" ? salesToday : totalSyncedBenta)}
             tone="positive"
           />
         </View>
         <View style={styles.bentoMetricCell}>
           <BentoMetricCard
-            label="Gastos"
+            label="Expenses"
             value={formatPhp(timeRange === "today" ? expenseToday : expenseTotal)}
             tone="expense"
           />
         </View>
         <View style={styles.bentoMetricCell}>
-          <BentoMetricCard label="Tiwala Score" value={`${displayScore}`} />
+          <BentoMetricCard label="Trust Score" value={`${displayScore}`} />
         </View>
         <View style={styles.bentoMetricCell}>
           <BentoMetricCard label="Limit" value={formatPhp(displayLimit)} tone="positive" />
@@ -881,8 +1062,8 @@ export default function KahaScreen() {
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.textSecondary }}>
             {stage === CREDIT_STAGES.CORNER_STORE
-              ? "Tiwala Score at Limit: Max Stage"
-              : `Tiwala Score at Limit: ${formatStageLabel(stage, stageMeta)}`}
+              ? "Trust Score & Limit: Max Stage"
+              : `Trust Score & Limit: ${formatStageLabel(stage, stageMeta)}`}
           </Text>
           <Text style={{ fontSize: 12, fontWeight: "800", color: colors.primary }}>
             {stage === CREDIT_STAGES.READ_ONLY
@@ -920,13 +1101,27 @@ export default function KahaScreen() {
 
       <View style={styles.quickActionRow}>
         <QuickAction
-          label="Record Benta / Gastos"
+          label="Record Sales / Expenses"
           helper="Cash / banks"
           tone="dual"
           onPress={() => {
             setStatusMessage("");
             setActiveRecordTab("benta");
             setIsRecordModalVisible(true);
+          }}
+        />
+        <QuickAction
+          label="Cash In"
+          helper={network.isOffline ? "Offline" : "XLM → PHPC"}
+          disabled={network.isOffline}
+          tone="positive"
+          onPress={() => {
+            setCashInXlmAmount("");
+            setCashInPhpcAmount("");
+            setCashInStep("form");
+            setCashInError("");
+            setCashInTxHash("");
+            setIsCashInModalVisible(true);
           }}
         />
         <QuickAction
@@ -956,7 +1151,7 @@ export default function KahaScreen() {
         />
       ) : null}
 
-        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={tiwalaScore} loanLimit={loanLimit} onChainScore={onChainScore} onChainLimit={onChainLimit} isOffline={network.isOffline} />
+        <ProfilePanel stage={stage} stageMeta={stageMeta} tiwalaScore={displayScore} loanLimit={displayLimit} onChainScore={null} onChainLimit={null} isOffline={network.isOffline} />
         </>
       ) : null}
       {activeSection === "Tracker" ? (
@@ -1007,12 +1202,12 @@ export default function KahaScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1 }]}>
             <Text style={[styles.modalTitle, { color: colors.text }]}>
-              {activeRecordTab === "benta" ? "Record Benta" : "Record Gastos"}
+              {activeRecordTab === "benta" ? "Record Sales" : "Record Expenses"}
             </Text>
             <Text style={[styles.bodyText, { color: colors.textSecondary, marginBottom: 14 }]}>
               What happened?
             </Text>
-
+ 
              {/* Tab Selector */}
             <View style={{ marginBottom: 16 }}>
               <SegmentedControl
@@ -1023,16 +1218,16 @@ export default function KahaScreen() {
                   setActiveRecordTab(nextTab);
                 }}
                 options={[
-                  { id: "benta", label: "Benta" },
-                  { id: "gastos", label: "Gastos" },
+                  { id: "benta", label: "Sales" },
+                  { id: "gastos", label: "Expenses" },
                 ]}
               />
             </View>
-
+ 
             {/* Form Fields based on Active Tab */}
             {activeRecordTab === "benta" ? (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Halaga</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Amount</Text>
                 <TextInput
                   value={bentaAmount}
                   onChangeText={setBentaAmount}
@@ -1041,7 +1236,7 @@ export default function KahaScreen() {
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
-
+ 
                 <AnimatedPressable
                   accessibilityRole="button"
                   disabled={isSavingBenta}
@@ -1054,13 +1249,13 @@ export default function KahaScreen() {
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    {isSavingBenta ? "Saving..." : "Save Benta"}
+                    {isSavingBenta ? "Saving..." : "Save Sales"}
                   </Text>
                 </AnimatedPressable>
               </View>
             ) : (
               <View style={{ gap: 8 }}>
-                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Halaga</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Amount</Text>
                 <TextInput
                   value={expenseAmount}
                   onChangeText={setExpenseAmount}
@@ -1069,7 +1264,7 @@ export default function KahaScreen() {
                   placeholderTextColor={colors.textSecondary}
                   style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border }]}
                 />
-                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Pinambayad</Text>
+                <Text style={[styles.cardLabel, { color: colors.textSecondary, marginTop: 4 }]}>Payment Source</Text>
                 <View style={[styles.rangeRow, { flexWrap: "wrap", gap: 6 }]}>
                   {EXPENSE_PAYMENT_SOURCES.map((source) => (
                     <AnimatedPressable
@@ -1106,7 +1301,7 @@ export default function KahaScreen() {
                   ]}
                 >
                   <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>
-                    {isSavingExpense ? "Saving..." : "Save Gastos"}
+                    {isSavingExpense ? "Saving..." : "Save Expenses"}
                   </Text>
                 </AnimatedPressable>
               </View>
@@ -1172,15 +1367,17 @@ export default function KahaScreen() {
               onPress={() => {
                 Alert.alert(
                   "Change Wallet?",
-                  "Are you sure you want to change wallet? The current store wallet connection will be disconnected.",
+                  "This will disconnect your current wallet. You can reconnect with any Stellar public key.",
                   [
                     { text: "Cancel", style: "cancel" },
                     {
-                      text: "Change",
+                      text: "Disconnect",
                       style: "destructive",
                       onPress: async () => {
                         setIsWalletModalVisible(false);
+                        await clearWalletConnection();
                         await clearOnboarding();
+                        setWalletConnection(null);
                       }
                     }
                   ]
@@ -1267,6 +1464,133 @@ export default function KahaScreen() {
                 Continue
               </Text>
             </AnimatedPressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ─── CASH IN MODAL: XLM → USDC → PHPC ─── */}
+      <Modal
+        visible={isCashInModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          if (!cashInIsSubmitting) setIsCashInModalVisible(false);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border, borderWidth: 1, borderRadius: 24 }]}>
+
+            {cashInStep === "form" && (
+              <View style={{ gap: 14 }}>
+                <Text style={[styles.modalTitle, { color: colors.text }]}>💰 Cash In (XLM → PHPC)</Text>
+                <View style={{ backgroundColor: colors.primaryContainer, padding: 10, borderRadius: 12, borderWidth: 1, borderColor: colors.primary }}>
+                  <Text style={{ fontSize: 12, color: colors.onPrimaryContainer, lineHeight: 18 }}>
+                    🔄 Your XLM is swapped to USDC, then to PHPC — all in one step on the Stellar DEX. Rate: ~56 PHPC per USDC.
+                  </Text>
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>PHPC to Receive (₱)</Text>
+                  <TextInput
+                    id="cashInPhpcAmountInput"
+                    value={cashInPhpcAmount}
+                    onChangeText={setCashInPhpcAmount}
+                    keyboardType="numeric"
+                    placeholder="e.g. 500"
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
+                  />
+                </View>
+
+                <View style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: colors.textSecondary, textTransform: "uppercase" }}>Max XLM to Spend</Text>
+                  <TextInput
+                    id="cashInXlmAmountInput"
+                    value={cashInXlmAmount}
+                    onChangeText={setCashInXlmAmount}
+                    keyboardType="numeric"
+                    placeholder="e.g. 10"
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.input, { backgroundColor: colors.cardSecondary, color: colors.text, borderColor: colors.border, borderRadius: 12, fontSize: 16 }]}
+                  />
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                    Available: {Number(xlmBalance).toFixed(4)} XLM. You only spend what's needed — unused XLM stays in your wallet.
+                  </Text>
+                </View>
+
+                {cashInError ? (
+                  <Text style={{ color: colors.error, fontSize: 12, fontWeight: "700" }}>{cashInError}</Text>
+                ) : null}
+
+                <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                  <AnimatedPressable
+                    id="cashInConfirmButton"
+                    style={({ pressed }) => [
+                      styles.primaryButton,
+                      { flex: 1, backgroundColor: colors.primary, borderRadius: 99 },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={handleCashIn}
+                  >
+                    <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Swap & Cash In</Text>
+                  </AnimatedPressable>
+                  <AnimatedPressable
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      { flex: 1, backgroundColor: colors.cardSecondary, borderColor: colors.border, borderRadius: 99, marginTop: 0 },
+                      pressed && styles.pressed,
+                    ]}
+                    onPress={() => setIsCashInModalVisible(false)}
+                  >
+                    <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
+                  </AnimatedPressable>
+                </View>
+              </View>
+            )}
+
+            {cashInStep === "broadcasting" && (
+              <View style={{ alignItems: "center", paddingVertical: 20, gap: 14 }}>
+                <Text style={[styles.modalTitle, { color: colors.text, textAlign: "center" }]}>Swapping on Stellar DEX...</Text>
+                <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: "center" }}>
+                  Converting XLM → USDC → PHPC via path payment...
+                </Text>
+                <Text style={{ fontSize: 40 }}>🔄</Text>
+              </View>
+            )}
+
+            {cashInStep === "success" && (
+              <View style={{ gap: 14, alignItems: "center" }}>
+                <Text style={{ fontSize: 48 }}>🎉</Text>
+                <Text style={[styles.modalTitle, { color: colors.success || colors.primary, textAlign: "center", fontWeight: "900" }]}>Cash In Successful!</Text>
+                <Text style={{ fontSize: 14, color: colors.text, textAlign: "center", lineHeight: 20 }}>
+                  Received <Text style={{ fontWeight: "800", color: colors.primary }}>₱{Number(cashInPhpcAmount).toLocaleString()} PHPC</Text> via{" "}
+                  <Text style={{ fontWeight: "700" }}>XLM → USDC → PHPC</Text> swap.
+                </Text>
+                <View style={{ width: "100%", backgroundColor: colors.cardSecondary, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: colors.border, gap: 6 }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary }}>TX Hash</Text>
+                    <Text style={{ fontSize: 11, color: colors.text, fontFamily: "monospace" }}>
+                      {cashInTxHash ? cashInTxHash.slice(0, 8) + "..." + cashInTxHash.slice(-8) : "—"}
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11, color: colors.textSecondary }}>Swap Route</Text>
+                    <Text style={{ fontSize: 11, color: colors.text, fontWeight: "700" }}>XLM → USDC → PHPC</Text>
+                  </View>
+                </View>
+                <AnimatedPressable
+                  style={({ pressed }) => [
+                    styles.primaryButton,
+                    { backgroundColor: colors.primary, borderRadius: 99, width: "100%", marginTop: 10 },
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => setIsCashInModalVisible(false)}
+                >
+                  <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Close</Text>
+                </AnimatedPressable>
+              </View>
+            )}
+
           </View>
         </View>
       </Modal>
@@ -1495,7 +1819,7 @@ export default function KahaScreen() {
                               const currentLimit = getLoanLimitForStage(evaluateCreditStage(totalSyncedBenta));
                               const currentOutstanding = await getOutstandingLoanBalance();
 
-                              const syncResult = await syncProfileToChain(storeSecretKey, currentScore, currentLimit, currentOutstanding);
+                              const syncResult = await syncProfileToChainAndClearReset(storeSecretKey, currentScore, currentLimit, currentOutstanding);
                               setOnChainScore(syncResult.confirmedScore);
                               setOnChainLimit(syncResult.confirmedLimit);
                               setOnChainOutstandingBalance(syncResult.confirmedOutstandingBalance);
@@ -1583,7 +1907,7 @@ export default function KahaScreen() {
 }
 
 const LOADING_MESSAGES = [
-  "Connecting Kaha...",
+  "Connecting Ledger...",
   "Preparing Lists...",
   "Syncing Loans...",
   "Counting Stocks...",
@@ -1643,7 +1967,7 @@ function LoadingScreen() {
   );
 }
 
-function WalletConnectionGate({ onConnect }) {
+function WalletConnectionGate({ onConnect, onReset }) {
   const { theme, toggleTheme, colors } = useTheme();
   const [publicKey, setPublicKey] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -1675,21 +1999,40 @@ function WalletConnectionGate({ onConnect }) {
           <Text style={{ fontSize: 24, color: colors.primary }}>🔑</Text>
           <Text style={[styles.title, { color: colors.primary, fontSize: 22, fontWeight: "800", marginBottom: 0 }]}>SariSync</Text>
         </View>
-        <AnimatedPressable
-          onPress={toggleTheme}
-          style={({ pressed }) => [
-            {
-              padding: 8,
-              borderRadius: 99,
-              backgroundColor: colors.cardSecondary,
-              borderWidth: 1,
-              borderColor: colors.border,
-            },
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
-        </AnimatedPressable>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          {onReset && (
+            <AnimatedPressable
+              onPress={onReset}
+              style={({ pressed }) => [
+                {
+                  padding: 8,
+                  borderRadius: 99,
+                  backgroundColor: colors.errorContainer || "#FEE2E2",
+                  borderWidth: 1,
+                  borderColor: colors.error || "#B91C1C",
+                },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={{ fontSize: 18 }}>🔄</Text>
+            </AnimatedPressable>
+          )}
+          <AnimatedPressable
+            onPress={toggleTheme}
+            style={({ pressed }) => [
+              {
+                padding: 8,
+                borderRadius: 99,
+                backgroundColor: colors.cardSecondary,
+                borderWidth: 1,
+                borderColor: colors.border,
+              },
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={{ fontSize: 18 }}>{theme === "light" ? "🌙" : "☀️"}</Text>
+          </AnimatedPressable>
+        </View>
       </View>
 
       {/* Main Connection Card */}
@@ -1699,7 +2042,7 @@ function WalletConnectionGate({ onConnect }) {
             <Text style={{ color: theme === "light" ? "#005427" : "#A6F8B4", fontSize: 12, fontWeight: "700" }}>Connect Wallet</Text>
           </View>
           <Text style={[styles.bodyText, { color: colors.textSecondary, textAlign: "center", fontSize: 15, paddingHorizontal: 8 }]}>
-            Connect wallet to prepare Kaha, while records are secured in the background.
+            Connect wallet to prepare Ledger, while records are secured in the background.
           </Text>
         </View>
 
@@ -1860,12 +2203,12 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Tracker</Text>
-      <Text style={[styles.stageName, { color: colors.text }]}>Araw-araw na galaw ng tindahan</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Daily store activity</Text>
       <View style={styles.metricsGrid}>
-        <MiniMetric label="Gastos" value={formatPhp(snapshot.spent)} color={colors.expense} />
-        <MiniMetric label="Benta" value={formatPhp(snapshot.earned)} color={colors.primary} />
-        <MiniMetric label="Puhunan" value={formatPhp(snapshot.capital + loanCapital)} color={colors.tertiary} />
-        <MiniMetric label="Utang" value={formatPhp(loanCapital)} color={colors.error} />
+        <MiniMetric label="Expenses" value={formatPhp(snapshot.spent)} color={colors.expense} />
+        <MiniMetric label="Sales" value={formatPhp(snapshot.earned)} color={colors.primary} />
+        <MiniMetric label="Capital" value={formatPhp(snapshot.capital + loanCapital)} color={colors.tertiary} />
+        <MiniMetric label="Loans" value={formatPhp(loanCapital)} color={colors.error} />
       </View>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
@@ -1902,7 +2245,7 @@ function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlSta
               ]}
             >
               <Text style={[styles.loanButtonText, { color: buttonDisabled ? colors.textSecondary : (theme === "light" ? "#FFFFFF" : "#111411") }]}>
-                {!controlState.canTransact ? "Offline" : isReadOnly ? "Locked" : isTooHigh ? "Too High" : "Humingi"}
+                {!controlState.canTransact ? "Offline" : isReadOnly ? "Locked" : isTooHigh ? "Too High" : "Request"}
               </Text>
             </AnimatedPressable>
           </View>
@@ -2003,15 +2346,15 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
 
   return (
     <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Utang</Text>
-      <Text style={[styles.stageName, { color: colors.text }]}>Manage loans and bayad</Text>
+      <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Loans</Text>
+      <Text style={[styles.stageName, { color: colors.text }]}>Manage loans and payments</Text>
 
       {statusMessage ? <Text style={[styles.statusText, { color: colors.primary }]}>{statusMessage}</Text> : null}
 
       <View style={styles.metricsGrid}>
-        <MiniMetric label="Active Utang" value={formatPhp(outstandingBalance)} color={colors.error} />
+        <MiniMetric label="Active Loans" value={formatPhp(outstandingBalance)} color={colors.error} />
         <MiniMetric label="Loan Limit" value={formatPhp(loanLimit)} color={colors.primary} />
-        <MiniMetric label="Draft Bayad" value={String(repaymentDrafts.length)} color={colors.expense} />
+        <MiniMetric label="Draft Payments" value={String(repaymentDrafts.length)} color={colors.expense} />
         <MiniMetric label="Paid Loans" value={String(paidLoans.length)} color={colors.success} />
       </View>
 
@@ -2041,7 +2384,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
                 ]}
               >
                 <Text style={styles.bayadButtonText}>
-                  {!controlState.canTransact ? "Draft" : "Bayad"}
+                  {!controlState.canTransact ? "Draft" : "Repay"}
                 </Text>
               </AnimatedPressable>
             </View>
@@ -2053,7 +2396,7 @@ function DebtPanel({ loans, controlState, onRepayLoan, statusMessage, outstandin
         <View style={[styles.readOnlyBanner, { backgroundColor: colors.cardSecondary, borderColor: colors.border }]}>
           <Text style={[styles.cardLabel, { color: colors.textSecondary }]}>Pending local work</Text>
           <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
-            {repaymentDrafts.length} Bayad draft saved on this phone.
+            {repaymentDrafts.length} Repayment draft saved on this phone.
           </Text>
         </View>
       ) : null}
@@ -2248,7 +2591,7 @@ function ReceiptsPanel({ receipts, loans, controlState, onCreateDocument, docume
           pressed && styles.pressed,
         ]}
       >
-        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Gumawa ng Dokumento</Text>
+        <Text style={[styles.primaryButtonText, { color: theme === "light" ? "#FFFFFF" : "#111411" }]}>Create Document</Text>
       </AnimatedPressable>
       {documentStatusMessage ? (
         <Text style={[styles.bodyText, { fontSize: 12, color: colors.textSecondary, textAlign: "center" }]}>

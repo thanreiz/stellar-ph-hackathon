@@ -104,7 +104,7 @@ export default function OnboardingScreen() {
           />
           <Text style={[styles.title, { color: colors.text }]}>SariSync</Text>
           <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            Kaha, utang, and proof for your sari-sari store. Your records are secured in the background.
+            Ledger, loans, and proof for your sari-sari store. Your records are secured in the background.
           </Text>
         </View>
 
