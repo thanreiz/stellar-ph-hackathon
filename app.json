@@ -25,13 +25,7 @@
       }
     },
     "plugins": [
-      "expo-router",
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Allow SariSync Ledger to scan supplier invoice QR codes."
-        }
-      ]
+      "expo-router"
     ],
     "experiments": {
       "typedRoutes": false

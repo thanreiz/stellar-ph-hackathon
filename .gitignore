@@ -7,6 +7,7 @@ dist-web/
 output/
 .DS_Store
 .env
+lenders.json
 .idea/
 scratch/
 dist-android/

@@ -142,7 +142,6 @@ SariSync helps a sari-sari store owner:
 | Network awareness | `@react-native-community/netinfo` |
 | Blockchain | Stellar SDK, Horizon, Soroban RPC |
 | Smart contract | Rust / Soroban |
-| Camera | Expo Camera |
 | Documents | Expo FileSystem + Expo Sharing |
 | Tests | Node.js native test runner |
 
@@ -222,14 +221,21 @@ EXPO_PUBLIC_HORIZON_URL=https://horizon-testnet.stellar.org
 EXPO_PUBLIC_STELLAR_NETWORK=testnet
 EXPO_PUBLIC_STORE_PUBLIC_KEY=GDKM...
 EXPO_PUBLIC_STORE_SECRET_KEY=SD...
+EXPO_PUBLIC_LENDER_1_SECRET=SD...
+EXPO_PUBLIC_LENDER_2_SECRET=SD...
 EXPO_PUBLIC_PHPC_ISSUER=GB...
 EXPO_PUBLIC_USDC_ISSUER=GB...
 EXPO_PUBLIC_SOROBAN_CONTRACT_ID=CDUE...
 ```
 
-Seed lender liquidity for a repeatable demo:
+> No secret keys are committed to this repo. Provide your own testnet keys in `.env`. The
+> partner-lender signing keys are read from `EXPO_PUBLIC_LENDER_1_SECRET` /
+> `EXPO_PUBLIC_LENDER_2_SECRET`; their public keys and amounts live in `lenders.example.json`.
+
+Set up lender liquidity for a repeatable demo (`lenders.json` is gitignored):
 
 ```bash
+cp lenders.example.json lenders.json   # then add each lender's secretKey
 npm run seed:lenders
 ```
 

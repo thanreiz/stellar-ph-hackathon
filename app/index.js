@@ -91,13 +91,15 @@ import {
   StatusBanner,
 } from "../components/SariSyncUI";
 
-// Lender accounts (generated via setupLiquidity + generateLenders scripts)
+// Lender accounts (generated via setupLiquidity + generateLenders scripts).
+// Public keys + display metadata are safe to ship; the signing secret keys are
+// provided per-environment (see .env.example) and are never committed.
 const LENDER_OFFERS = [
   {
     id: "lender_001",
     name: "Kaagapay Microfinance",
     publicKey: "GAFLJJXR63KPK6UWVCXR34GL5G2F34TUX2ETCGU3SC6ASY6LRIBD3BCB",
-    secretKey: "SDXGZJ7JQWRM5ZVQLXJDG553W4RU3RN7HSZXYF7CPCLWYHTCQ6NXYIO3",
+    secretKey: process.env.EXPO_PUBLIC_LENDER_1_SECRET || "",
     amountPhpc: 5000,
     description: "₱5,000 micro-loan for inventory restocking",
     interestRate: "2% monthly",
@@ -106,7 +108,7 @@ const LENDER_OFFERS = [
     id: "lender_002",
     name: "Tindahan Capital Co.",
     publicKey: "GA4AX33VBDEVKBQZMG3ADNOBAXGATEW3ZWNLJTINNGGFF7CQRPWMTTEB",
-    secretKey: "SDPYF7RIUVMN4AANXKWKEWCYTAZACZ2CJ5MM3B6DADAC6JBTDANF4SXJ",
+    secretKey: process.env.EXPO_PUBLIC_LENDER_2_SECRET || "",
     amountPhpc: 8000,
     description: "₱8,000 capital upgrade for corner stores",
     interestRate: "1.8% monthly",
@@ -707,6 +709,13 @@ export default function KahaScreen() {
 
   async function handleReceiveLoan(offer) {
     try {
+      if (!offer.secretKey) {
+        Alert.alert(
+          "Lender not configured",
+          "This lender's signing key is missing. Set EXPO_PUBLIC_LENDER_1_SECRET / EXPO_PUBLIC_LENDER_2_SECRET in your .env to enable loan disbursement.",
+        );
+        return;
+      }
       setStatusMessage("Requesting loan from " + offer.name + "...");
       const result = await receiveLoanFromLender({
         lenderSecretKey: offer.secretKey,
@@ -1163,7 +1172,6 @@ export default function KahaScreen() {
           stageMeta={stageMeta}
           controlState={controlState}
           onReceiveLoan={handleReceiveLoan}
-          onOpenScanner={() => router.push("/scanner")}
           statusMessage={statusMessage}
           outstandingBalance={displayOutstandingBalance}
         />
@@ -2183,7 +2191,7 @@ function ProfilePanel({ stage, stageMeta, tiwalaScore, loanLimit, onChainScore, 
   );
 }
 
-function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlState, onReceiveLoan, onOpenScanner, statusMessage, outstandingBalance }) {
+function TrackerPanel({ snapshot, loans, loanLimit, stage, stageMeta, controlState, onReceiveLoan, statusMessage, outstandingBalance }) {
   const { theme, colors } = useTheme();
   const isReadOnly = stage === CREDIT_STAGES.READ_ONLY;
   const [isRequesting, setIsRequesting] = useState(false);
